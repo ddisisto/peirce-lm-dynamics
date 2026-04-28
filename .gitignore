@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Data artifacts (kernel sweeps, trajectory records, model caches)
+# Project artifacts live outside the repo by default; uncomment / extend as needed
+data/
+models/
+*.zarr/
+*.parquet
+*.h5
+*.hdf5
+
+# Notebooks (keep code, not output)
+*.ipynb_checkpoints/

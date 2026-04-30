@@ -2,7 +2,7 @@
 
 *Companion to the [Foundations](foundation.md) document. Specifies what the project must do, what properties it must have, and what it deliberately does not commit to. Implementation details belong downstream.*
 
-*Status: v2.0. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
+*Status: v2.1. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
 
 ---
 
@@ -28,13 +28,14 @@ Hard-cap is the assumption-free case: the trajectory unfolds entirely by the mod
 
 ### Terminal events
 
-Three terminal events are mutually exclusive and exhaustive under hard-cap inference at T=0:
+Trajectories generated under hard-cap inference at T=0 end in exactly one of four events. The terminal event is part of the trajectory's record and a primary observable; the distribution of terminal events across an ensemble is itself a characterization of the model's dynamics under the chosen run configuration.
 
 - **EOS-termination.** The model produced its end-of-sequence token as the argmax. The trajectory naturally completes. Length is meaningful — short means the model wanted to end soon, long means it took a while.
-- **Basin-capture.** The trajectory entered an attractor (a cycle, possibly of length one) that does not contain EOS. Without intervention the trajectory would loop indefinitely. Detected during generation by structural means; tagged.
-- **Window-cap.** The trajectory reached the architectural context length L without producing EOS or being captured by a detected basin. The trajectory's fate at higher L is empirically undetermined; tagged "indeterminate."
+- **Candidate-basin.** A structural cycle is observed within the trajectory: a recent token pattern repeats one already produced, period 1 or higher. The cycle is *flagged* by structural evidence; whether it is a true asymptotic attractor or an extended transient that would escape with more depth is a separate empirical question, adjudicated by depth-extension and probability dynamics (continuation mass versus escape mass, entropy trace, top-1/top-2 gap), not by the structural observation alone. Tagged "candidate" until adjudicated; may serve as a runtime terminator (stopping generation early) or as a post-run annotation, at the discretion of the cycle's run configuration.
+- **Budget-cap.** The trajectory reached a configured step budget without a prior event firing. The budget is a parameter of the run, not of the model; budget-cap is the practical terminal for trajectories whose natural termination lies beyond what the current inquiry was willing to compute. Re-running with a larger budget is the natural escalation.
+- **Window-cap.** The trajectory reached the architectural context length L_arch without a prior event firing. The trajectory's fate beyond L_arch is undefined under hard-cap inference; tagged "indeterminate."
 
-Every trajectory ends in exactly one of these. The terminal event is part of the trajectory's record and a primary observable in its own right; the distribution of terminal events across an ensemble is itself a characterization of the model's first-cycle dynamics.
+Candidate-basin and EOS are *intrinsic* events — the model produced them. Budget-cap and window-cap are *extrinsic* — the run was terminated by the experiment or the architecture. The distinction matters for interpretation: an intrinsic event is a fact about the model in this configuration; an extrinsic event is a fact about the experiment's bounds.
 
 ### Initial conditions
 
@@ -56,11 +57,13 @@ For each trajectory, per-step thin records capture the dynamics:
 - Distribution entropy
 - Second-most-likely token and its probability
 
-Five fields per step. Sufficient for terminal-event detection, basin recognition, entropy-collapse signals, and substrate-versus-novelty discrimination. Tabular storage with manifest provenance.
+Five fields per step. These fields are the instrumentation by which candidate-basins are adjudicated: a true asymptotic attractor and an extended transient look identical at the token-stream level but separate in their probability-and-entropy dynamics as context grows. Log-prob of the chosen token tracks how confidently each step is committed; entropy tracks bulk distributional uncertainty; the second-most-likely token and its probability locate where escape pressure concentrates. Tabular storage with manifest provenance.
 
 ### Single-step transitions as a derived view
 
 The model's predicted next-token distribution at any context appearing in the trajectory ensemble is captured implicitly by the per-step record. Two views are particularly useful for first-cycle characterization: the prediction at `[BOS]`, which is shared across the ensemble and recorded once; and the transition kernel at `[BOS, X]` for various X, captured as the step-1 distribution of trajectories whose step-0 branch was X. The vocabulary-exhaustive ensemble covers this kernel across the full vocabulary; the in-distribution ensemble covers it for the most-probable starting tokens. Single-step characterizations are therefore a derived view of the trajectory ensemble, requiring no separate production.
+
+Single-step views do not characterize asymptotic dynamics, however. A high-probability self-loop at `[BOS, X] → X` is consistent with both a true fixed-point attractor and an extended transient that escapes once the context records enough leading repetition for the model's training distribution to surface escape tokens. The local kernel is a starting point; the trajectory is what tells you whether the cycle holds.
 
 ### Convention sensitivity
 

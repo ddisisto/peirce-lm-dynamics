@@ -6,7 +6,7 @@
 
 - [`foundation.md`](foundation.md) — frozen-by-default conceptual underpinning
 - [`design-reqs.md`](design-reqs.md) — revisable structural commitments
-- [`brief.md`](brief.md) — live implementation arc through the L=1 proof of concept
+- [`brief.md`](brief.md) — shape of inquiry across cycles and the first cycle's concrete moves
 
 ## Status
 

@@ -7,6 +7,7 @@
 - [`foundation.md`](foundation.md) — frozen-by-default conceptual underpinning
 - [`design-reqs.md`](design-reqs.md) — revisable structural commitments
 - [`brief.md`](brief.md) — shape of inquiry across cycles and the first cycle's concrete moves
+- [`observations.md`](observations.md) — append-only log of empirical observations, each pinned to a commit hash and repro details
 
 ## Status
 

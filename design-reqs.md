@@ -2,7 +2,7 @@
 
 *Companion to the [Foundations](foundation.md) document. Specifies what the project must do, what properties it must have, and what it deliberately does not commit to. Implementation details belong downstream.*
 
-*Status: v2.1. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
+*Status: v2.2. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
 
 ---
 
@@ -55,9 +55,9 @@ For each trajectory, per-step thin records capture the dynamics:
 - Token (id and decoded string)
 - Log-probability of the chosen token
 - Distribution entropy
-- Second-most-likely token and its probability
+- Most-probable non-chosen alternative and its probability
 
-Five fields per step. These fields are the instrumentation by which candidate-basins are adjudicated: a true asymptotic attractor and an extended transient look identical at the token-stream level but separate in their probability-and-entropy dynamics as context grows. Log-prob of the chosen token tracks how confidently each step is committed; entropy tracks bulk distributional uncertainty; the second-most-likely token and its probability locate where escape pressure concentrates. Tabular storage with manifest provenance.
+Five fields per step. These fields are the instrumentation by which candidate-basins are adjudicated: a true asymptotic attractor and an extended transient look identical at the token-stream level but separate in their probability-and-entropy dynamics as context grows. Log-prob of the chosen token tracks how confidently each step is committed; entropy tracks bulk distributional uncertainty; the alternative token and its probability locate where escape pressure concentrates at argmax steps and where the trajectory diverges from the model's argmax preference at sampled or overridden steps. The same field shape carries the same analytic role across T=0 argmax, step-0 override, and T>0 sampled regimes. Tabular storage with manifest provenance.
 
 ### Single-step transitions as a derived view
 

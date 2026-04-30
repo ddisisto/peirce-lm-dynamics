@@ -48,18 +48,23 @@ def generate_trajectory(
 
         chosen_log_prob = log_probs[chosen_id].item()
         chosen_token = tokenizer.decode([chosen_id])
-        runner_id = top2_ids[1]
-        runner_token = tokenizer.decode([runner_id])
-        runner_prob = top2_probs[1]
+
+        if top2_ids[0] != chosen_id:
+            alt_id = top2_ids[0]
+            alt_prob = top2_probs[0]
+        else:
+            alt_id = top2_ids[1]
+            alt_prob = top2_probs[1]
+        alt_token = tokenizer.decode([alt_id])
 
         steps.append(StepRecord(
             token_id=chosen_id,
             token=chosen_token,
             log_prob=chosen_log_prob,
             entropy=entropy,
-            top2_token_id=runner_id,
-            top2_token=runner_token,
-            top2_prob=runner_prob,
+            alt_token_id=alt_id,
+            alt_token=alt_token,
+            alt_prob=alt_prob,
         ))
         history.append(chosen_id)
 

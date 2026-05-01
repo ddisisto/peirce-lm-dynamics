@@ -156,3 +156,49 @@ The single-space basin-001 has gap=2.54 despite being period-1 — looser than t
 ### Methodological observation
 
 This is the first run that exercises the records-design probe shape `(window, records) → result` in code. The basin probe operates over a window-spec (`cycle_window`, `stats_window`) and produces a structured `BasinSignature` dataclass. The shape works in practice; the windowing parameters need empirical tuning as more specimens land. Probe-shaped detection also unblocks runtime basin-capture predicates (next move would be a predicate that runs the probe at intervals during generation and stops early on confirmed basins, freeing budget for non-cycling trajectories).
+
+---
+
+## 2026-05-01 — runtime basin-capture predicate; reps-count fix; v0.2 catalog
+
+**Commit:** `08b0ba5`
+**Run:** `uv run python scripts/broad_shallow.py`
+**Config:** model `EleutherAI/pythia-1b-deduped` (fp32, GTX 1070), initial `[BOS]`, top-100 from BOS, budget 64 tokens, T=0 hard-cap. Predicate stack `[eos, basin_capture(K=4), budget_cap, window_cap]`. Probe `peirce.basins.detect_tail_cycle` at `max_period=16`, `cycle_window=64`, `stats_window=32`.
+
+### Headline
+
+- 28 / 100 trajectories captured by the runtime predicate (terminal `candidate-basin`); 72 / 100 reached `budget_cap`.
+- 19 distinct basins identified across the 28 captured trajectories; 4 basins exhibit coalescence.
+- Captured-trajectory length: mean 20, median 13, range 4–61. The runtime predicate frees ~44 inference forward passes per captured trajectory on average vs running each to budget cap.
+- Catalog refreshed in [basins.md](basins.md) as v0.2.
+
+### What changed since the v0.1 catalog (commit `ae95f32`)
+
+Two coupled changes; the headline number drift (32 → 28 captured) is the joint effect.
+
+1. **Runtime basin-capture predicate added.** Detection now fires during generation as soon as a confirmed cycle is observed, rather than running every trajectory to budget and probing the tail post-hoc. Probes every step once `n_steps >= K`; per-step overhead is bounded by `detect_tail_cycle`'s O(`max_period^2`) tail comparisons — negligible against a model forward.
+2. **Confirmation threshold raised from K=2 to K=4** and **`repetitions_in_cycle_window` corrected.** v0.1 reported `tail_n // period` as the rep count, which is the trivial maximum given tail length and period rather than actual consecutive cycle blocks. Under that bug, K=2 sometimes flagged trajectories whose tail merely happened to contain a 2-token recurrence with prose elsewhere (period-1 cycles especially). With reps now counting consecutive cycle blocks back from the tail, K=4 is the empirical match to the v0.1-intent threshold "this cycle has structurally locked in" and matches the late-window pattern of every v0.1 catalog entry that ran to depth 64.
+
+### Reconciliation against v0.1
+
+- **All four high-coalescence v0.1 basins reproduced** with the same trajectory membership: single-space (5 traj), `'  |'` (4 traj), `'#'` (2 traj), and `' [x]'` (2 traj — v0.2 merges what v0.1 split into two rotational variants).
+- **All three v0.1 phrase basins reproduced**: "first thing to note" (traj 28), "list of all the files" (traj 81), "data is released" (traj 93).
+- **Five v0.1 entries not re-confirmed at v0.2 K=4**: `-trump` (period-3, traj 15), Japanese phrase (period-13, traj 37), `\n` (period-1, traj 40), status-table-row (period-14, traj 45), and the `I had been up` prose-cycle (period-14, traj 3). All were borderline at v0.1's K=2 and several were flagged "possibly extended transient" in the v0.1 catalog. None of these trajectories show 4 consecutive cycle reps within 64 tokens.
+
+### Adjudicated
+
+- **The runtime predicate matches the post-hoc probe in spirit and surfaces the same basin structure.** Coalescence pattern is identical at the high-coalescence end. No basin found by the runtime predicate is absent from the v0.1 universe.
+- **The K=4 + corrected-reps threshold is more conservative than v0.1's K=2 + over-counted reps**, demoting borderline entries that were already noted as fragile in v0.1.
+- **Inference savings are real and substantial** at this scale: ~44 forward passes saved per captured trajectory. Over 28 trajectories, ~1230 forward passes saved (vs ~6400 total in the v0.1 run).
+
+### Suggestive but not yet adjudicated
+
+- Whether the 72 / 100 unflagged trajectories reach basins by L_arch (the selection-bias question, unchanged — and now the natural next move under the runtime predicate, which will terminate them early on capture without depth budget waste).
+- Whether the five demoted v0.1 entries materialize as confirmed basins when their trajectories are extended to L_arch under the v0.2 predicate. Specifically targeted candidates for the selection-bias probe.
+- Whether basin-merging across rotational variants (basin-003 in v0.2 absorbed v0.1's basin-007 and basin-011) is a general pattern under the runtime predicate, or specific to short-period cycles where the K=4 termination point happens to align rotational starts.
+
+### Methodological observation
+
+The predicate signature was extended from `(history, n_steps) → tag | None` to `(history, records, n_steps) → tag | None` to support probes that need the per-step probability dynamics. Existing predicates (eos, budget_cap, window_cap) ignore the new `records` argument. Ordering in the predicate stack matters: `basin_capture` is placed after `eos` (so EOS termination still wins when the model produces `<|endoftext|>` mid-cycle) and before `budget_cap` (so capture-before-budget fires correctly).
+
+The fix to `repetitions_in_cycle_window` retroactively affects how v0.1 catalog entries should be read: the rep counts in basins.md v0.1 were inflated. Basin identities (cycle-token-id tuples) and late-window stats are unaffected.

@@ -41,6 +41,8 @@ def generate_trajectory(
         top2_ids = top2.indices.tolist()
         top2_probs = top2.values.tolist()
 
+        logit_gap = log_probs[top2_ids[0]].item() - log_probs[top2_ids[1]].item()
+
         if len(steps) == 0 and first_step_override is not None:
             chosen_id = first_step_override
         else:
@@ -65,6 +67,7 @@ def generate_trajectory(
             alt_token_id=alt_id,
             alt_token=alt_token,
             alt_prob=alt_prob,
+            logit_gap=logit_gap,
         ))
         history.append(chosen_id)
 

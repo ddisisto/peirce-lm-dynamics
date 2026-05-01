@@ -130,7 +130,7 @@ These together suggest a two-tier shape — definitions canonical, records dense
 
 ### Fully-sparse-rank-as-primary-identity
 
-Storing trajectories as `[(position, rank), ...]` alone, with tokens reconstructed by forward-pass on read, is a clean and compact representation. It requires bitwise reproducibility of argmax across the systems that write and read — a precondition the project does not currently have. Deferred until either (a) the project commits to a single deterministic system end-to-end, or (b) cross-stack bitwise reproducibility becomes available. The current design (dense canonical + rank-event annotation) is forward-compatible with adopting fully-sparse later.
+Storing trajectories as `[(position, rank), ...]` alone, with tokens reconstructed by forward-pass on read, is a clean and compact representation. It requires bitwise reproducibility of argmax across the systems that write and read — a precondition the project does not currently have. Deferred until either (a) the project commits to a single deterministic system end-to-end, or (b) cross-stack bitwise reproducibility becomes available. The current design (dense canonical + rank-event annotation) is forward-compatible with adopting fully-sparse later. See *Persistence-layer specifics* below for the generator-pattern architectural sketch that would make this representation practical.
 
 ### Cross-stack bitwise reproducibility
 
@@ -139,6 +139,8 @@ Achieving bitwise-identical logits across hardware/library combinations is achie
 ### Persistence-layer specifics
 
 What the storage backend looks like — file formats, indexing, query surface — is downstream of this document. The design requirements above constrain it; they do not specify it.
+
+One architectural sketch worth recording, surfaced here so it is available when persistence design starts: trajectory generation could expose a generator interface that yields step records lazily, with persistence layered as a transparent cache — `trajectory[k:k+w]` either retrieves cached steps or pulls from the generator, with the same code path serving fresh-compute and read-from-store. Windows as first-class observers become slices over the generator; basin-capture predicates get natural early-exit by stopping pulls. This is also the architectural pattern that would make fully-sparse-rank-as-primary-identity (above) practical, since on-demand re-inference would only run on slices not cached. Light commitment; not specified, only named.
 
 ### Cross-trajectory probes
 

@@ -70,7 +70,8 @@ def main() -> None:
             print(
                 f"  step {step_idx:2d}: tok={step.token!r:>16} "
                 f"lp={step.log_prob:7.3f}  H={step.entropy:.3f}  "
-                f"alt={step.alt_token!r:>16} p={step.alt_prob:.3f}"
+                f"alt={step.alt_token!r:>16} p={step.alt_prob:.3f}  "
+                f"gap={step.logit_gap:.3f}"
             )
         print()
 

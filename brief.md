@@ -1,14 +1,14 @@
 # Peirce — Project Brief
 
-*Companion to the [Foundations](foundation.md) and [Design Requirements](design-reqs.md). Maps the shape of inquiry across cycles, and the first cycle's concrete moves.*
+*Companion to the [Foundations](foundation.md), [Design Requirements](design-reqs.md), [Records Design](design-reqs-records.md), and [Steered Trajectories Design](design-reqs-steering.md). Reads alongside [observations.md](observations.md) (empirical observations, commit-pinned) and [ideas.md](ideas.md) (forward-looking threads not yet ready for design surfaces). Maps the shape of inquiry across cycles, and the first cycle's concrete moves.*
 
-*Status: v0.2. The brief is more revisable than the requirements and far more revisable than the foundations. Substantial revision is recorded; minor edits are not.*
+*Status: v0.3 (2026-05-01). Cycle 1 mid-flight: Phase 0 mostly complete, Phase 1 and Phase 2 each ran at small scale, basin detection and catalog formalization is the immediate next priority. The brief is more revisable than the requirements and far more revisable than the foundations. Substantial revision is recorded; minor edits are not.*
 
 ---
 
 ## What this document is
 
-The Foundations specify what the project studies and the frame it studies through. The Design Requirements specify what the system must do and the structural properties it must have. Neither commits to a specific first move. This document does.
+The Foundations specify what the project studies and the frame it studies through. The Design Requirements (and their companions) specify what the system must do and the structural properties it must have. Neither commits to a specific first move. This document does.
 
 The brief maps the shape of inquiry — the recurring pattern by which each cycle produces understanding — and the first cycle's concrete instantiation of that pattern. It is downstream of the Foundations and Requirements; nothing here overrides anything there.
 
@@ -42,58 +42,69 @@ The first cycle's moves are concrete and bounded. They are chosen to produce som
 - **Depth budget.** 64 tokens per trajectory in the broad-shallow pass — sufficient to surface candidate cycles of moderate period (period < ~20). Selected trajectories are extended toward L_arch in the representative-deep pass. Window-cap at L_arch=2048 is theoretical at this scale; budget-cap is the practical extrinsic terminal.
 - **Inference and sampling.** Hard-cap, T=0 argmax. Deterministic given model + start token; no replicates, no seeds, no sampling variance to characterize before the substrate is mapped.
 - **Total compute.** 100 trajectories × ≤64 steps = at most 6400 token-steps for the broad-shallow ensemble. Trivial on the 1070.
-- **Per-step thin records.** Token (id and decoded), log-prob of chosen, distribution entropy, second-most-likely token + its probability. Five fields per step. Tabular storage (Parquet) with manifest sidecar.
-- **Candidate-basin recognition.** Manual plus ad-hoc cycle-finding for the first cycle. No formal detector is built; we do not yet know what signature it should match. Trajectories containing structural cycles within budget are flagged; whether each flag is a true asymptotic attractor or an extended transient is the question the representative-deep pass adjudicates by watching the probability dynamics.
+- **Per-step thin records.** Specified in the [records design](design-reqs-records.md): chosen token (id and decoded), log-prob of chosen, distribution entropy, most-probable non-chosen alternative and its probability, rank-1/rank-2 logit gap. Six fields per step. Trajectory observation packets carry these alongside stack identity, initial condition, predicate set, and terminal event.
+- **Storage.** Records held in-memory for the script-driven first-cycle work; selected outputs captured as observation entries in [observations.md](observations.md). Persistence as artifact format is deferred — see *Looking beyond the first cycle*.
+- **Candidate-basin recognition.** Manual plus ad-hoc cycle-finding for the small-scale runs. Formalization into a basin-detection probe and a basin catalog is the immediate next priority within Phase 2 — see below.
 
-The smoke test's `'\n' → '\n'` self-loop at step 1 is not assumed to be a true fixed point. Whether the leading-whitespace regime escapes into content — titles, banners, metadata blocks reflected from the training distribution — is among the things the first cycle is set up to find out.
+The smoke test's `'\n' → '\n'` self-loop at step 1 was not assumed to be a true fixed point. Whether the leading-whitespace regime escapes into content — titles, banners, metadata blocks reflected from the training distribution — was among the things the first cycle was set up to find out. Representative-deep extension of that branch (rank 0 in the broad-shallow ensemble) settled into a period-11 phrase basin on entirely different content, validating the depth-as-adjudicator move; the per-step trace is in observations.md.
 
 ## Phase 0 — substrate and harness
 
 Phase 0 closes a small set of decisions and stands up the infrastructure the rest of the cycle depends on.
 
-**Pinned.**
+**Pinned and built.**
 - Model: pythia-1b-deduped, fp32, CUDA on GTX 1070.
-- Tooling: uv with Python 3.12, dependencies via `uv add`.
-- Repo layout: flat package at `peirce/` with `__main__.py` entry, scripts in `scripts/`, data artifacts under `data/` (gitignored).
+- Tooling: uv with Python 3.12, dependencies via `uv add`, hatchling build-system so `peirce` installs as an editable package.
+- Repo layout: flat package at `peirce/` with `engine.py`, `predicates.py`, `records.py`. Scripts in `scripts/`. Data artifacts under `data/` (gitignored, currently unused).
 - Inference convention: direct token feed (`[BOS, ...]`) with no chat-template wrapper. Sensitivity to plumbing is a finding to characterize, not a problem to eliminate upfront.
+- Engine: `generate_trajectory(model, tokenizer, initial_ids, predicates, first_step_override)` returns a `Trajectory` of `StepRecord`s plus a terminal event. Hard-cap T=0 is the default; the architecture accommodates T>0 and step-0 override without modification.
+- Predicate framework: `(history, n_steps) → tag | None` closures. EOS, budget-cap, and window-cap are the implemented predicates. Adding a new event observer is registering a new predicate. The signature will need extension to see step records once basin-detection runtime predicates land.
+- Smoke test: `scripts/smoke_engine.py` produces a small ensemble from top-5 BOS branches and prints thin records.
+- Observation log: `observations.md` is the append-only, commit-pinned record of empirical findings.
 
-**To pin during Phase 0.**
-- Module structure: an `engine` providing trajectory generation given a model, initial condition, predicate set, and run config; a `predicates` module providing the open set of stop conditions and event observers; a `manifest` module providing run-config + provenance serialization.
-- Trajectory record schema: the five fields above, in Parquet, one row per step, partitioned by trajectory id. Manifest sidecar in JSON or YAML capturing model id and revision, code commit, k, budget, inference strategy, initial condition, sampling config (T=0).
-- Predicate framework: a small uniform interface over (history, position, model state, run state) → terminal-event tag or None. EOS-detection, structural-cycle detection, budget-cap, and window-cap are all instances of this primitive. Adding a new event observer is registering a new predicate.
-- Smoke-test rework: replace `scripts/smoke_l1.py` with a smoke for the trajectory engine that produces a small ensemble and reads it back.
+**Immediate engineering work.**
+- `peirce/records.py` needs a pass to align with the (more recent) [records design](design-reqs-records.md): observation packet structure, the rank-1/rank-2 logit gap field, windows as first-class objects, probes as `(window, records) → result`. This is the unblocking work for basin detection.
 
 **Deliberately deferred.**
-- Basin fingerprinting. The signature that distinguishes a true attractor from an extended transient at the level of intensive features is itself an empirical question; a formal fingerprint earns its keep once there are specimens to know what it should match. First-cycle annotation is structural-cycle detection plus a probability-dynamics summary, both post-hoc.
+- Persistence of trajectory artifacts. Trajectories are well-described for inference-time observation, with select outputs captured as observation entries based on the question being asked. Full persistence becomes the right move when `records.py` is sufficiently stable that the schema is unlikely to churn, *or* when persistence blocks something critical (cross-run analysis, basin-coalescence detection across runs, contributor-shareable artifacts). Either condition is the trigger; the format choice (Parquet was the working assumption; Zarr is also in dependencies) is decided then.
+- Manifest serialization as a separate module. Stack-identity and run-config metadata travel with each trajectory packet per the records design; a separate manifest module is not load-bearing until persistence lands.
 - Dense kernel artifacts. The full vocab × vocab transition kernel at any specific context is computable on demand; storing one is not load-bearing for the first cycle. The single-step view at `[BOS]` is implicitly captured by step 0 of the trajectory ensemble.
 - Engine validation against a separately produced dense reference. Closed-form spot-checks against direct logit calls suffice; a dense-artifact phase is not warranted at first-cycle scale.
 
 ## Phase 1 — broad-shallow ensemble
 
-Run the 100 × 64 ensemble. Store thin records and manifest. Inspect by hand.
+The 100 × 64 ensemble ran on 2026-04-30 (commit `3d9d401`); detailed observations are in observations.md. Headline findings: zero EOS within 64 tokens across all 100 starts; 32/100 token-level cycle flags under a simple max-period-16 detector; clear semantic-attractor patterns at the content level (medical-paper boilerplate, C/C++ headers, JSON-like structures) that token-level cycle detection misses entirely.
 
-Primary observables:
+Primary observables for the broad-shallow pass:
 
 - Distribution of terminal events: how many EOS-terminate within 64 steps, how many trigger candidate-basin flags, how many budget-cap as still-running transients.
 - Entropy traces around candidate-cycle entry: does entropy collapse and stay collapsed (capture-like) or does it drop and recover (extended-transient-like).
-- Top-1 / top-2 gap dynamics in candidate-cycle regions: does the gap widen with depth (capture-like) or narrow (escape pressure rising).
+- Rank-1 / rank-2 gap dynamics in candidate-cycle regions: does the gap widen with depth (capture-like) or narrow (escape pressure rising).
 - Categorical regularities across starting tokens: do tokens of similar surface kind (whitespace, punctuation, function words, content words) produce similar trajectories, or does trajectory behavior cut across surface categories.
 
-Output: a trajectory ensemble citable as a first-class artifact, a notebook or memo summarizing what was actually observed, and a list of candidate basins selected for the representative-deep pass.
+Output of the small-scale run: an observation entry; a list of candidate basins selected for the representative-deep pass. Scaling beyond 100 (toward vocab-exhaustive) is part of Phase 3 in-fill, choosing where to extend on the basis of what the small-scale run surfaced.
 
-## Phase 2 — representative-deep adjudication
+## Phase 2 — representative-deep adjudication and basin formalization
 
-Select candidates from Phase 1. Extend toward L_arch. Watch probability dynamics over the extended depth.
+The representative-deep dip ran on 2026-05-01 (commit `343e2fc`) on 6 selected candidates from the broad-shallow ensemble (ranks 0, 4, 6, 14, 27, 28). All 6 reached `window_cap` at L_arch=2047; all 6 adjudicated as true asymptotic basins under hard-cap T=0 by every signal in design-reqs v2.2 (chosen log-prob → 0, entropy → 0, alt-prob → 0). Selection bias caveat in the entry: 5/6 were chosen because they flagged a token-level cycle, biasing the set toward likely-basin trajectories.
 
-Adjudication, per candidate cycle: does the probability mass on continuation tokens hold or grow with depth, or does it erode? Does the second-most-likely token at cycle steps remain a low-probability stranger, or does it ascend? Does entropy stay collapsed, or does it rise as the model integrates more of the cycle's history? The pattern across these indicators distinguishes true asymptotic attractors from extended transients.
+Adjudication, per candidate cycle: does the probability mass on continuation tokens hold or grow with depth, or does it erode? Does the alt-token at cycle steps remain a low-probability stranger, or does it ascend? Does entropy stay collapsed, or does it rise as the model integrates more of the cycle's history? The pattern across these indicators distinguishes true asymptotic attractors from extended transients.
 
-Output: a typology in two cuts — candidate-basins that survived adjudication (provisional true attractors) and candidate-basins that escaped (extended transients, with the depth and signature of escape recorded). Both are findings.
+**Immediate next move within Phase 2: basin detection and catalog formalization.** Manual adjudication validated the depth-as-adjudicator approach on 6 specimens; formalization is the move that unblocks (a) selection-bias-aware re-runs, (b) basin-coalescence detection (when do two trajectories enter the same basin?), (c) basin-fingerprint formats that make basin identity persist across runs and observers, and (d) the steering thread's primary prerequisite. Concrete sub-moves:
+
+- Promote the cycle-detection logic in `scripts/representative_deep.py` to a basin-detection probe over a named window, per the [records design](design-reqs-records.md) probe interface.
+- Define a basin identity / fingerprint format. Cycle period + cycle content + late-window probability profile are the obvious starting features; the right level of abstraction is itself an empirical question.
+- Establish a basin catalog: an append-only record of basins observed so far, with stack identity and the trajectories that reached them. The catalog is one of the structures the steering thread reads against.
+- Add a runtime basin-capture predicate (using the formalized detector) so future representative-deep runs can stop early on confirmed basins, freeing depth-budget for trajectories that have not yet been captured.
+
+The two outputs together — formalized detection and a catalog of basins — are what the project actually needs more than persisted trajectories at this stage. Trajectories remain well-described for inference-time observation; basins are the structural objects whose identity must persist.
 
 ## Phase 3 — in-fill
 
-Targeted exploration of regions the first two passes surfaced. Plausible directions, chosen by what Phase 2 actually found:
+Targeted exploration of regions the first two passes surfaced. Plausible directions, chosen by what Phase 2's basin catalog actually contains:
 
-- Higher k from `[BOS]` to test whether categorical regularities seen in the top-100 hold in the OOD tail.
+- Higher k from `[BOS]` — extending toward vocab-exhaustive — to test whether categorical regularities seen in the top-100 hold in the OOD tail and to populate the basin catalog with more specimens.
+- Re-runs of the broad-shallow ensemble with the basin-capture predicate enabled, freeing depth-budget for trajectories that have not yet been captured. Adjudicates the selection-bias question raised in the 2026-05-01 entry: do non-cycling broad-shallow trajectories also reach basins by L_arch?
 - Alternate initial conditions on bounded subsets — multi-BOS prefixes, short seeded prompts — to begin convention-sensitivity characterization.
 - Plumbing-sensitivity probes — minor variations in tokenizer normalization, special-token handling — to tag findings as plumbing-stable or plumbing-sensitive.
 - Specific deeper dives into trajectories whose adjudication was ambiguous: probability-gap dynamics at finer resolution, comparison to neighboring trajectories in start-token space.
@@ -102,12 +113,23 @@ In-fill is cheap relative to broad-shallow and representative-deep, because each
 
 ## Looking beyond the first cycle
 
-Each axis named in *the shape of inquiry* opens a later cycle.
+Each axis named in *the shape of inquiry* opens a later cycle. Some forward-looking threads have their own design surfaces; others are parked in [ideas.md](ideas.md) until they earn one.
+
+**With existing design surfaces.**
+
+- **Targeted basin steering.** Minimum-token interventions on identified context-foundations to test reachability of hypothesized basins. Specified in [design-reqs-steering.md](design-reqs-steering.md). Prerequisites named there; Phase 2's basin formalization is one of them.
+
+**Parked in ideas.md.**
+
+- **Transients as the territory of useful generation, EOS as success state, external fitness probes.** Reframe of basins as failure-modes-for-engineering vs phenomena-for-science; would graduate to its own design surface once productive-vs-degenerate-transient classification becomes formalizable and external fitness probes have been exercised.
+
+**Deferred without formal design surface yet.**
 
 - **T>0 perturbation cycle.** With the deterministic substrate mapped, temperature becomes the first natively continuous perturbation. Small T probes the immediate neighborhood of T=0 attractors; rising T traces the transition from substrate-like behavior to typical-sample-like behavior. The kernel formulation accommodates this without architectural change.
 - **Sliding-window inference cycles.** Naive sliding (BOS decays out of context), stabilized sliding (attention sinks pin first-k tokens), chunked sliding with grain. Each studies a distinct post-L regime; each is its own cycle with its own broad-shallow → representative-deep → in-fill instantiation.
-- **Discrete perturbations.** Token injection, context manipulation, structured prompt frames. Operators that move trajectories between basins; the project's eventual core, currently deferred until the unperturbed substrate exists to interpret perturbations against.
+- **Discrete perturbations beyond steering.** Token injection at scale, context manipulation, structured prompt frames. The project's eventual core, currently deferred.
 - **Cross-model.** Running the same first cycle on a second and third model. Cross-model basin identity becomes the first place richer fingerprinting earns its keep, and likely the first place the project's distinctive contribution becomes visible against existing work.
+- **Trajectory persistence.** Records held in-memory and observation entries are sufficient for inference-time investigation. Full persistence (artifact format, indexing, cross-run query surface) becomes the right move when `peirce/records.py` is sufficiently stable to commit to the schema, *or* when persistence is blocking something critical (cross-run basin coalescence at scale, contributor-shareable artifacts, the cross-model cycle).
 - **Dense N-gram caching.** Frequent context prefixes admit dense kernel storage as an engineering optimization on the trajectory engine's working set. Filed for much later; coherent with the trajectory framing without driving current decisions.
 
 ## Prior art worth tracking
@@ -120,4 +142,4 @@ These are the references most directly aligned with the project's framing as it 
 
 ---
 
-*This brief assumes familiarity with the [Foundations](foundation.md) and [Design Requirements](design-reqs.md) and uses their vocabulary without re-introduction.*
+*This brief assumes familiarity with the [Foundations](foundation.md), [Design Requirements](design-reqs.md), and the records and steering companion docs, and uses their vocabulary without re-introduction. Empirical findings are in [observations.md](observations.md); forward-looking threads not yet ready for design surfaces are in [ideas.md](ideas.md).*

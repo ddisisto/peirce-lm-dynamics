@@ -2,7 +2,7 @@
 
 *Companion to the [Foundations](foundation.md) document. Specifies what the project must do, what properties it must have, and what it deliberately does not commit to. Implementation details belong downstream.*
 
-*Status: v2.2. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
+*Status: v2.3. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
 
 ---
 
@@ -13,6 +13,8 @@ The Foundations document specifies what the project studies and the frame it stu
 It does not reproduce the Foundations' content; it specifies the design commitments that follow from them. Where decisions remain open, they are named explicitly. Where decisions have been made, the reasoning is preserved alongside them so they can be revisited deliberately rather than overturned by drift.
 
 Implementation details belong downstream of this document. Implementation choices that conflict with the Foundations are resolved by deliberate re-founding; implementation choices that conflict with these requirements are resolved by either revising the implementation or revising the requirements. The Foundations are supreme; this document is revisable; both are deliberate moves.
+
+The structure of recorded observations — per-step thin records, trajectory packets, windows as named selectors, and the relationship between recorded certainty and reproducibility — is specified in the companion [Records, Windows, and Observation Design Requirements](design-reqs-records.md). This document references that one at the points where record structure is load-bearing.
 
 ## Immediate scope
 
@@ -31,7 +33,7 @@ Hard-cap is the assumption-free case: the trajectory unfolds entirely by the mod
 Trajectories generated under hard-cap inference at T=0 end in exactly one of four events. The terminal event is part of the trajectory's record and a primary observable; the distribution of terminal events across an ensemble is itself a characterization of the model's dynamics under the chosen run configuration.
 
 - **EOS-termination.** The model produced its end-of-sequence token as the argmax. The trajectory naturally completes. Length is meaningful — short means the model wanted to end soon, long means it took a while.
-- **Candidate-basin.** A structural cycle is observed within the trajectory: a recent token pattern repeats one already produced, period 1 or higher. The cycle is *flagged* by structural evidence; whether it is a true asymptotic attractor or an extended transient that would escape with more depth is a separate empirical question, adjudicated by depth-extension and probability dynamics (continuation mass versus escape mass, entropy trace, top-1/top-2 gap), not by the structural observation alone. Tagged "candidate" until adjudicated; may serve as a runtime terminator (stopping generation early) or as a post-run annotation, at the discretion of the cycle's run configuration.
+- **Candidate-basin.** A structural cycle is observed within the trajectory: a recent token pattern repeats one already produced, period 1 or higher. The cycle is *flagged* by structural evidence; whether it is a true asymptotic attractor or an extended transient that would escape with more depth is a separate empirical question, adjudicated by depth-extension and probability dynamics (chosen-token log-probability, distribution entropy, alt-token probability — see [records design](design-reqs-records.md)), not by the structural observation alone. Tagged "candidate" until adjudicated; may serve as a runtime terminator (stopping generation early) or as a post-run annotation, at the discretion of the cycle's run configuration.
 - **Budget-cap.** The trajectory reached a configured step budget without a prior event firing. The budget is a parameter of the run, not of the model; budget-cap is the practical terminal for trajectories whose natural termination lies beyond what the current inquiry was willing to compute. Re-running with a larger budget is the natural escalation.
 - **Window-cap.** The trajectory reached the architectural context length L_arch without a prior event firing. The trajectory's fate beyond L_arch is undefined under hard-cap inference; tagged "indeterminate."
 
@@ -50,14 +52,9 @@ These are the same enumeration at different scales of k, not two strategies. The
 
 ### Per-trajectory thin records
 
-For each trajectory, per-step thin records capture the dynamics:
+For each trajectory, per-step thin records capture the dynamics: the chosen token, its log-probability, the distribution entropy, the most-probable non-chosen alternative and its probability, and the rank-1/rank-2 logit gap. These fields are the instrumentation by which candidate-basins are adjudicated and by which cross-system reproducibility is predicted. The same field shape carries the same analytic role across T=0 argmax, step-0 override, and T>0 sampled regimes.
 
-- Token (id and decoded string)
-- Log-probability of the chosen token
-- Distribution entropy
-- Most-probable non-chosen alternative and its probability
-
-Five fields per step. These fields are the instrumentation by which candidate-basins are adjudicated: a true asymptotic attractor and an extended transient look identical at the token-stream level but separate in their probability-and-entropy dynamics as context grows. Log-prob of the chosen token tracks how confidently each step is committed; entropy tracks bulk distributional uncertainty; the alternative token and its probability locate where escape pressure concentrates at argmax steps and where the trajectory diverges from the model's argmax preference at sampled or overridden steps. The same field shape carries the same analytic role across T=0 argmax, step-0 override, and T>0 sampled regimes. Tabular storage with manifest provenance.
+Full specification — field semantics, the trajectory observation packet, the rank-event annotation layer, windows as first-class selectors, and the reproducibility framing — is in the [records design requirements](design-reqs-records.md).
 
 ### Single-step transitions as a derived view
 
@@ -83,7 +80,7 @@ These are properties the system must have regardless of the specific work being 
 
 ### The trajectory ensemble is a primary specimen
 
-Every trajectory the project produces is a first-class artifact: addressable, versioned, carrying manifest provenance, recoverable from `model + initial condition + inference strategy + code commit + sampling seed (where relevant)`. The ensemble of trajectories is itself a citable object that subsequent analyses reference rather than reproduce.
+Every trajectory the project produces is a first-class artifact: addressable, versioned, carrying manifest provenance, recoverable from its stack identity (model id and revision, dtype, device, deterministic-flags state, library versions), initial condition, predicate set, inference strategy, code commit, and sampling seed where relevant. The ensemble of trajectories is itself a citable object that subsequent analyses reference rather than reproduce. Stack identity is specified in the [records design](design-reqs-records.md); the rest is specified here.
 
 ### Basins have stable identities
 
@@ -91,7 +88,9 @@ A basin discovered in one run, on one model, under specific conditions must be r
 
 ### Findings are reproducible
 
-Any reported finding — an identified basin, an observed transition, a classification, a structural property — must be re-derivable from recorded conditions: model identifier and version, parameters, inference strategy, initial condition, code version, sampling seed where relevant. Findings without sufficient provenance to be re-derived are recorded as anecdotes when recorded at all.
+Any reported finding — an identified basin, an observed transition, a classification, a structural property — must be re-derivable from recorded conditions: stack identity, parameters, inference strategy, initial condition, predicates, code version, sampling seed where relevant. Findings without sufficient provenance to be re-derived are recorded as anecdotes when recorded at all.
+
+How reproducibility is operationalized — what counts as matching reproduction, how recorded certainty annotations factor in, what divergences-at-high-certainty signify — is specified in the [records design](design-reqs-records.md). Cross-system bitwise reproducibility is not assumed; the certainty annotations are the reproducibility prior.
 
 ### Findings are addressable
 
@@ -151,6 +150,8 @@ Comparing trajectory and basin structure across many models is high-value but pr
 
 The dynamics under temperature, token injection, and context manipulation are central to what the project is ultimately about. They are deferred until the unperturbed natural trajectory specimen is mapped, because the project wants a stable substrate to interpret perturbations against.
 
+One disciplined sub-form of perturbation — minimum-token interventions on identified context-foundations to test reachability of hypothesized basins — has its own forward-looking design surface in [Steered Trajectories: Design Requirements](design-reqs-steering.md). It is deferred under the same readiness conditions as perturbation studies generally, plus its own additional prerequisites (basin identity formalization, context-foundation catalog, intervention probe machinery).
+
 ### Higher-order dynamics
 
 Hierarchical attractor structure, cycles within cycles, slow drift between basins, attractor ecosystems. All deferred. All architecturally protected.
@@ -193,4 +194,4 @@ The point of naming these signals is not to make re-founding frequent. It is to 
 
 ---
 
-*This document is downstream of the [Foundations](foundation.md) and assumes familiarity with the vocabulary and frame defined there.*
+*This document is downstream of the [Foundations](foundation.md) and assumes familiarity with the vocabulary and frame defined there. The companion [Records, Windows, and Observation Design Requirements](design-reqs-records.md) specifies the structure of recorded observations.*

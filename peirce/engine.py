@@ -72,7 +72,7 @@ def generate_trajectory(
         history.append(chosen_id)
 
         for predicate in predicates:
-            tag = predicate(history, len(steps))
+            tag = predicate(history, steps, len(steps))
             if tag is not None:
                 terminal_event = tag
                 break

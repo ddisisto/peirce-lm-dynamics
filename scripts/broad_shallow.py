@@ -19,7 +19,7 @@ from collections import Counter, defaultdict
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from peirce.basins import BasinSignature, detect_tail_cycle
+from peirce.basins import BasinSignature, basin_capture_predicate, detect_tail_cycle
 from peirce.engine import generate_trajectory
 from peirce.predicates import (
     budget_cap_predicate,
@@ -64,6 +64,11 @@ def main() -> None:
 
     predicates = [
         eos_predicate(eos_id),
+        basin_capture_predicate(
+            max_period=MAX_CYCLE_PERIOD,
+            cycle_window=CYCLE_WINDOW,
+            stats_window=STATS_WINDOW,
+        ),
         budget_cap_predicate(BUDGET),
         window_cap_predicate(L_arch),
     ]
@@ -87,12 +92,15 @@ def main() -> None:
             predicates=predicates,
             first_step_override=bid,
         )
-        sig = detect_tail_cycle(
-            traj,
-            max_period=MAX_CYCLE_PERIOD,
-            cycle_window=CYCLE_WINDOW,
-            stats_window=STATS_WINDOW,
-        )
+        if traj.terminal_event == "candidate-basin":
+            sig = detect_tail_cycle(
+                traj.steps,
+                max_period=MAX_CYCLE_PERIOD,
+                cycle_window=CYCLE_WINDOW,
+                stats_window=STATS_WINDOW,
+            )
+        else:
+            sig = None
         results.append((bid, bprob, traj, sig))
         if (i + 1) % 10 == 0:
             print(f"  ... {i + 1}/{NUM_BRANCHES}", flush=True)

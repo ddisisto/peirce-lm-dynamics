@@ -96,3 +96,63 @@ Five of six candidates were selected because they flagged a token-level cycle in
 - Whether non-cycling broad-shallow trajectories settle into basins by L_arch under hard-cap T=0.
 - Whether multiple distinct broad-shallow trajectories converge to the same basin (basin coalescence vs basin multiplicity).
 - Whether rank-27's higher residual pressure indicates a structurally looser basin or a token-position artifact at large initial-token width.
+
+---
+
+## 2026-05-01 — broad-shallow re-run with formalized basin probe + logit-gap field; basin coalescence confirmed at small budget
+
+**Commit:** `ae95f32`
+**Run:** `uv run python scripts/broad_shallow.py`
+**Config:** model `EleutherAI/pythia-1b-deduped` (fp32, GTX 1070), initial `[BOS]`, top-100 from BOS, budget 64 tokens, T=0 hard-cap. Basin probe `peirce.basins.detect_tail_cycle` with `max_period=16`, `cycle_window=64`, `stats_window=32`. Six-field thin records (logit_gap added per design-reqs-records.md).
+
+### Headline
+
+- 32 / 100 trajectories formally flagged with tail cycles by the v1 probe — exactly the same count as the 2026-04-30 manual scan, which used the same algorithm at the same depth. Probe formalization reproduces the manual heuristic where designed to.
+- 24 distinct basins identified across the 32 flagged trajectories. Basin coalescence is real: 3 basins absorb multiple trajectories.
+- Cycle period range: 1 to 15. Late-window logit-gap range: 1.37 to 8.69. Late-window entropy range: 0.15 to 2.63.
+- All 100 trajectories terminated as `budget_cap` (no EOS within 64 tokens), unchanged from prior run.
+
+### Basin coalescence
+
+The basin catalog is in [basins.md](basins.md); coalescence highlights:
+
+- **basin-001** (period-1 single-space): 5 trajectories from whitespace-prefix and one mixed-prefix BOS branches (6, 27, 41, 64, 95).
+- **basin-002** (period-2 double-space-pipe table fence): 4 trajectories (14, 19, 25, 62).
+- **basin-003** (period-1 hash-fill `#`): 2 trajectories (49, 92).
+
+The remaining 21 basins are singletons within this 100-trajectory ensemble. Coalescence is concentrated in the simplest structural basins; phrase-level and longer-period basins each appeared in only one trajectory at this scale.
+
+### Phrase basins reached at budget=64
+
+Four trajectories reached phrase-level cycles within budget — qualitatively different from structural / table-fence basins:
+
+- Trajectory 28: `' the _first_ thing to note is that'` (period 9). Confirmed from prior runs.
+- Trajectory 81: `' following is a list of all the files in the project.\n\nThe'` (period 15). Confirmed.
+- Trajectory 93: `'\nThe data is released to the public.\n'` (period 10). New observation at this depth — the broad-shallow run reached a complete-sentence-period cycle in 64 tokens.
+- Trajectory 3: `' I had been up for almost two hours and I was still awake.'` (period 14). Most natural-prose basin in the ensemble; loosest stats (H=2.63, gap=1.37) — possibly an extended transient that has not yet committed.
+
+### What the new logit-gap field reveals
+
+The mean late-window logit-gap separates basin family in a way that suggests it is a useful classification signal:
+
+- Tightest basins (gap > 6): structural cycles dominated by very-low-period repetition or single-character fills (basin-010, -007, -021, -011, -006, -003, etc.).
+- Loose basins (gap < 3): the prose-cycle basin-024 (gap=1.37), the multilingual basin-012 (gap=3.83), and the URL-pattern basin-016 (gap=3.09). These are candidates for extended-transient adjudication via depth extension.
+
+The single-space basin-001 has gap=2.54 despite being period-1 — looser than the hash-fill basin-003 (gap=5.60) at the same period. The constituent trajectories enter the basin from different prefix lengths, with content-history affecting late-window certainty. Worth noting.
+
+### Adjudicated
+
+- **Basin coalescence is real, observable at small budget, and concentrated in the simplest basins.** Question raised in the 2026-05-01 representative-deep entry: settled in the affirmative for the structural family.
+- **Phrase basins reach within 64 tokens for some trajectories.** The "_first_ thing to note" specimen (trajectory 28) was already known; "data is released to the public" (trajectory 93) is a new specimen of phrase-level basin reached at budget. The transients-as-territory thread now has clean specimens at small budget.
+- **The v1 basin probe matches the manual heuristic where overlapping** — the 32/100 count is identical. The probe additionally produces structured signatures (period, cycle text, late-window stats) usable for the catalog.
+
+### Suggestive but not yet adjudicated
+
+- Whether the 68 / 100 still-transient trajectories reach basins by L_arch (the selection-bias question, unchanged).
+- Whether the loose-stats basins (basin-024 prose-cycle, basin-012 multilingual, basin-016 URL-pattern) survive depth extension or escape into different content.
+- Whether the gap-vs-H bivariate distribution across basins separates the local-success-trap family from other basin families more cleanly than either metric alone.
+- Whether basin-001 vs basin-003 stats difference (period-1 single-space loose vs period-1 hash-fill tight) is a content-driven structural property or an artifact of constituent-trajectory diversity.
+
+### Methodological observation
+
+This is the first run that exercises the records-design probe shape `(window, records) → result` in code. The basin probe operates over a window-spec (`cycle_window`, `stats_window`) and produces a structured `BasinSignature` dataclass. The shape works in practice; the windowing parameters need empirical tuning as more specimens land. Probe-shaped detection also unblocks runtime basin-capture predicates (next move would be a predicate that runs the probe at intervals during generation and stops early on confirmed basins, freeing budget for non-cycling trajectories).

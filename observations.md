@@ -202,3 +202,81 @@ Two coupled changes; the headline number drift (32 → 28 captured) is the joint
 The predicate signature was extended from `(history, n_steps) → tag | None` to `(history, records, n_steps) → tag | None` to support probes that need the per-step probability dynamics. Existing predicates (eos, budget_cap, window_cap) ignore the new `records` argument. Ordering in the predicate stack matters: `basin_capture` is placed after `eos` (so EOS termination still wins when the model produces `<|endoftext|>` mid-cycle) and before `budget_cap` (so capture-before-budget fires correctly).
 
 The fix to `repetitions_in_cycle_window` retroactively affects how v0.1 catalog entries should be read: the rep counts in basins.md v0.1 were inflated. Basin identities (cycle-token-id tuples) and late-window stats are unaffected.
+
+---
+
+## 2026-05-02 — selection-bias probe to L_arch; capture is bimodal in depth; transient territory is substantive
+
+**Commit:** `882ae6d`
+**Run:** `uv run python scripts/selection_bias.py` (kicked off in background; output preserved at `/tmp/peirce_selbias.out`)
+**Config:** model `EleutherAI/pythia-1b-deduped` (fp32, GTX 1070), initial `[BOS]`, top-100 from BOS, no budget cap, run to L_arch=2048 under hard-cap T=0. Predicate stack `[eos, basin_capture(K=4, max_period=32, cycle_window=256, stats_window=256), window_cap]`. Probe parameters extended from v0.2's `16/64/32` to admit longer-period phrase basins seen in the `343e2fc` representative-deep dip.
+
+### Headline
+
+- **61 / 100 trajectories captured** by the runtime predicate at L_arch (vs 28 / 100 at v0.2's broad-shallow budget=64). **39 / 100 reached `window_cap`** at length 2047 and remain uncaptured.
+- **52 distinct basins** in the catalog after this run (up from 19 in v0.2). All 19 v0.2 basins reproduced with identical membership and signatures; 33 new basins surfaced at depth, predominantly long-period (11–26) phrase / boilerplate / table-row cycles. Catalog refreshed in [basins.md](basins.md) as v0.3.
+- Capture-depth distribution: min=4, median=77, mean=107.4, max=844. Buckets: ≤64: 28, 65–256: 28, 257–1024: 5, 1025–2047: 0. Zero EOS in any trajectory.
+
+### The bimodal-capture finding
+
+Capture is effectively bimodal in depth. Trajectories that capture do so either by depth ≤ 64 (the broad-shallow regime) or in the next octave 65–256 (the modest-extension regime). Past depth ~1000 capture does not occur within L_arch in any of the 100 trajectories sampled. The 257–1024 bucket holds 5 trajectories (max=844, basin-024 `.data.cuda`); the 1025–2047 bucket is empty.
+
+Read as a phase diagram: under hard-cap T=0 from `[BOS]`, a trajectory either *commits* to a token-level cycle within the first ~256 tokens of generation, or it doesn't commit within L_arch at all. There is no slowly-converging tail of late-cycle adoption — the bias of inference is to settle quickly or not settle.
+
+This was not visible from the broad-shallow + representative-deep dip. The representative-deep candidates were all selected from the broad-shallow flagged set, biasing toward fast-capture trajectories. The selection-bias probe is the first run with non-biased depth-extension across the ensemble, and the bimodal cutoff is the first run-output it reveals.
+
+### v0.1-demoted entries: four of five vindicated, one reassigned
+
+Five v0.1 entries were demoted under v0.2's K=4 + corrected reps (trajectories 3, 15, 37, 40, 45). Selection-bias adjudicates them at L_arch:
+
+- **Trajectory 3** (`I had been up for almost two hours and I was still awake.`): captured at length 91, period 14, H=2.66, gap=2.02. Now basin-022.
+- **Trajectory 15** (`trump-`): captured at length 65, period 3, H=1.64, gap=5.99. Now basin-025.
+- **Trajectory 37** (Japanese self-support phrase): captured at length 80, period 13, H=2.06, gap=3.35. Now basin-029.
+- **Trajectory 45** (status-table-row): captured at length 87, period 14, H=1.32, gap=4.58. Now basin-033.
+- **Trajectory 40** (v0.1 `\n` period-1 misassignment): captured at length 134, period 18, into the bilingual `file_content = 'Hello World!'` phrase basin (basin-031). The v0.1 period-1 `\n` cycle-token-id does not surface in this trajectory under K=4 + corrected reps; the eventual basin is the phrase, not the newline. The v0.1 assignment now reads as a misidentification — exactly the failure mode the K=2 + over-counted-reps regime was vulnerable to.
+
+The four vindicated entries were real basins all along; v0.2's K=4 was conservatively stricter than v0.1's K=2 within the broad-shallow budget, but the basins materialize cleanly when extended to depth.
+
+### What the new long-period basins look like
+
+The 33 new basins are dominated by period-11-or-greater phrase cycles. Three patterns recur:
+
+- **Recursive self-reference / self-quotation.** basin-030 (`The google-api-client library is a dependency of the google-api-client library`), basin-034 (`example of a simple example of a simple example of a simple example`), basin-035 (`is not a valid C++ program. It is not a valid C++ program because it`), basin-022 (`I had been up …`-style closure that re-invites itself). These are clean local-success-trap shapes — opening invites continuation that contains the opening, escape pressure never builds.
+- **Template openers with multiple closures.** The `"The following is a list of all the …"` / `"The following is the list of all the …"` opener appears in three independent basins (basin-018 `files in the project`, basin-037 `people who have been involved in the creation of the new website`, basin-050 `available options for the download`). Three different completions of the same template, from three different BOS branches. The opener is an attractor; the noun phrase is the basin-distinguishing detail.
+- **Memorized specific content.** basin-020 (`Chromium browser` authorship), basin-040 (a specific PubMed ID 17371263), basin-041 (RDoC project mental-disorder classification). The model has memorized very specific content and uses it as a basin target. Late-window stats are tight (gap 4.5–6.3) — once committed, these are essentially deterministic.
+
+### What the 39 transient trajectories look like
+
+Sampled tails (`window_cap` at 2047, last 64 tokens):
+
+- **RFC enumeration**: `[RFC5294](...) - The Internet Assigned Numbers Authority (IANA)\n-   * [RFC5295](...) - ...` (traj 23, `'-'` start). RFC numbers increment monotonically; the structural pattern is constant but tokens never close a cycle.
+- **Footnote enumeration**: `(636) (637) (638) (639) (640) ...` (traj 71, `'),'` start). Number incrementing.
+- **Chronic-disease table-row**: `Chronic kidney disease ... Chronic obstructive pulmonary disease ... ` (traj 11, `'.'` start). Table rows enumerate distinct conditions.
+- **CJK / Greek translation patches**: `"The Empire is in danger." "Η ΕΕ είναι σε θέση." ... "The Empire is in danger." "Η ΕΕ είναι σε θέση." ... ` (traj 8, `'"'` start; traj 31, `' "'` start). Translation pairs repeat but with msgid metadata that drifts.
+- **Repeating user_user_user keys with version drift**: `user_user_user_id, user_user_user_name, user_user_user_email, user_user_user_created_at, user_user_user_updated_at, ...` (traj 53, `"';"` start).
+- **Date-of-month enumeration**: `the eightieth day of the month, the nineth day of the month, the tenth day of the month, ...` (traj 82, `' since'` start).
+- **Github issue enumeration / shield URLs**: `https://img.shields.io/github/issues/joshuamc/bootstrap-table/issues ... ` repeating with slight URL drift (traj 17, 12-space prefix).
+
+Common shape: low local entropy (one obvious continuation at each step), no strict token-level repetition, structurally bounded by enumeration / drift. These are the candidates a token-level cycle detector cannot catch by construction.
+
+### Adjudicated
+
+- **Selection bias was real and substantial.** Broad-shallow capture is 28 / 100; depth-extended capture is 61 / 100. The 33-basin gap is the selection bias of the broad-shallow regime against long-period phrase basins. Reporting only broad-shallow capture would have understated basin density by more than half.
+- **Capture-depth is bimodal under hard-cap T=0 from `[BOS]`**, with a sharp ~1000-token cutoff. Trajectories commit fast or not at all within L_arch.
+- **"Transient territory" is substantive, not residual.** 39 / 100 trajectories — the largest single bucket — never close a token-level cycle within 2048 tokens. They are not bound for delayed cycles past depth 1000; they are in a different regime that the cycle-based detector cannot resolve.
+- **All v0.2 catalog entries are reproducible at L_arch** with the same predicate, same membership, same cycle-token-ids. Catalog identities are stable across the broad-shallow → selection-bias depth axis.
+
+### Suggestive but not yet adjudicated
+
+- Whether the 39 transient trajectories would capture under a longer L_arch (sliding-window inference, future cycle), or whether they are structurally transient under hard-cap T=0 from `[BOS]`. The bimodal cutoff is suggestive of structural transience but does not strictly rule out very-late capture.
+- Whether the bimodal-capture cutoff at ~1000 is a property of pythia-1b-deduped specifically, of the architectural L_arch=2048, or of hard-cap T=0 inference more generally. Cross-model and sliding-window comparisons would adjudicate.
+- Whether the template-opener attractors (`"The following is a list of all the …"`) coalesce into a single super-basin under perturbation (the closures are interchangeable in some functional sense), or whether each closure is a structurally distinct basin. The cycle-token-id identity treats them as distinct; the catalog format may need a "basin family" relation when this question matures.
+- Whether the recursive-self-reference shape (basin-030, -034, -035) is the dominant structural class of phrase basin in the model, or just a salient sub-class. A vocabulary-exhaustive ensemble would calibrate.
+
+### Methodological observation
+
+Probe parameters were extended (`max_period 16 → 32, cycle_window 64 → 256, stats_window 32 → 256`) before running. This was forced by the 343e2fc representative-deep dip, which surfaced phrase cycles at periods well above the v0.2 max_period=16. The catalog format (cycle-token-id identity) survives the parameter change cleanly: a basin found at one parameter setting is the same basin at another, as long as the cycle is reproducible. Probe parameters are part of run-pinning, not of basin identity.
+
+The runtime predicate is now the bottleneck for cycle-based capture — it captures everything cycle-detectable and frees all the budget that would otherwise be wasted running cycle-captured trajectories to L_arch. The 39 uncaptured trajectories cost L_arch=2047 forward passes each; the 61 captured trajectories cost their median 77. Total forward passes ~ 39·2047 + 61·107 ≈ 86 k vs 100·2047 ≈ 205 k for an unconditional L_arch run — ~58% saved. The remaining inefficiency is structural: catching the long transients requires the next detector class.
+
+The selection-bias probe is the closing observation of basin detection v1. The next direction is basin detection v2 (entropy-floor / logit-gap-floor) targeted at the 39 uncaptured trajectories, calibrated against the v0.3 catalog as confirmed-positive distribution.

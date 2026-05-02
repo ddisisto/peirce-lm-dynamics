@@ -5,6 +5,12 @@ context, recording per-step thin records, until a terminal event fires. The
 first step may be overridden to enable top-k-from-BOS branching: at step 0,
 a forced token is chosen instead of the argmax, but its position in the
 distribution is recorded normally (log-probability, entropy, top-2).
+
+Uses the HF KV cache (`past_key_values`) so each subsequent step feeds only
+the newly-chosen token to the model rather than re-running the full context.
+This converts per-trajectory work from O(L^2) to O(L) token-forward-passes.
+HF's GPTNeoX-family infers position ids from the cache length, so explicit
+position_ids are unnecessary at hard-cap T=0.
 """
 from __future__ import annotations
 
@@ -30,9 +36,13 @@ def generate_trajectory(
     steps: list[StepRecord] = []
     terminal_event: str | None = None
 
+    input_ids = torch.tensor([history], device=device)
+    past_kv = None
+
     while terminal_event is None:
-        input_ids = torch.tensor([history], device=device)
-        logits = model(input_ids).logits[0, -1, :]
+        outputs = model(input_ids, past_key_values=past_kv, use_cache=True)
+        past_kv = outputs.past_key_values
+        logits = outputs.logits[0, -1, :]
         log_probs = torch.log_softmax(logits, dim=-1)
         probs = log_probs.exp()
         entropy = -(probs * log_probs).sum().item()
@@ -76,6 +86,9 @@ def generate_trajectory(
             if tag is not None:
                 terminal_event = tag
                 break
+
+        if terminal_event is None:
+            input_ids = torch.tensor([[chosen_id]], device=device)
 
     return Trajectory(
         initial_ids=list(initial_ids),

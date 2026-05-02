@@ -67,7 +67,6 @@ def main() -> None:
         basin_capture_predicate(
             max_period=MAX_CYCLE_PERIOD,
             cycle_window=CYCLE_WINDOW,
-            stats_window=STATS_WINDOW,
         ),
         budget_cap_predicate(BUDGET),
         window_cap_predicate(L_arch),

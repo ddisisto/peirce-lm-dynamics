@@ -48,6 +48,46 @@ class BasinSignature:
     late_window_mean_logit_gap: float
 
 
+def find_tail_cycle_period(
+    token_ids: list[int],
+    max_period: int = 32,
+    cycle_window: int = 256,
+) -> tuple[int, int] | None:
+    """Structural-only counterpart of detect_tail_cycle: returns (period, reps).
+
+    Operates directly on a list of ints, skipping decode and late-window
+    statistics. Used by the runtime predicate, where only structural
+    confirmation is needed at every step; the full BasinSignature with
+    cycle text and adjudication stats is built once at termination via
+    detect_tail_cycle. Saves ~4× mean()-over-256 plus tuple/string
+    construction on every call.
+    """
+    n = len(token_ids)
+    if n < 2:
+        return None
+
+    tail = token_ids[-cycle_window:] if n > cycle_window else token_ids
+    tail_n = len(tail)
+
+    period: int | None = None
+    for p in range(1, min(max_period, tail_n // 2) + 1):
+        if tail[-p:] == tail[-2 * p : -p]:
+            period = p
+            break
+
+    if period is None:
+        return None
+
+    cycle = tail[-period:]
+    repetitions = 1
+    pos = tail_n - period
+    while pos >= period and tail[pos - period:pos] == cycle:
+        repetitions += 1
+        pos -= period
+
+    return period, repetitions
+
+
 def detect_tail_cycle(
     steps: list[StepRecord],
     max_period: int = 32,
@@ -68,28 +108,16 @@ def detect_tail_cycle(
     if n < 2:
         return None
 
-    tail = steps[-cycle_window:] if n > cycle_window else steps
-    tail_ids = [s.token_id for s in tail]
-    tail_n = len(tail_ids)
-
-    period: int | None = None
-    for p in range(1, min(max_period, tail_n // 2) + 1):
-        if tail_ids[-p:] == tail_ids[-2 * p : -p]:
-            period = p
-            break
-
-    if period is None:
+    token_ids = [s.token_id for s in steps]
+    found = find_tail_cycle_period(token_ids, max_period, cycle_window)
+    if found is None:
         return None
+    period, repetitions = found
 
+    tail = steps[-cycle_window:] if n > cycle_window else steps
     cycle_steps = tail[-period:]
     cycle_token_ids = tuple(s.token_id for s in cycle_steps)
     cycle_text = "".join(s.token for s in cycle_steps)
-
-    repetitions = 1
-    pos = tail_n - period
-    while pos >= period and tail_ids[pos - period:pos] == list(cycle_token_ids):
-        repetitions += 1
-        pos -= period
 
     stats_steps = steps[-stats_window:] if n > stats_window else steps
     sw_size = len(stats_steps)
@@ -111,32 +139,34 @@ def detect_tail_cycle(
 def basin_capture_predicate(
     max_period: int = 32,
     cycle_window: int = 256,
-    stats_window: int = 256,
     min_repetitions: int = 4,
 ) -> Predicate:
     """Predicate that terminates on a tail-cycle confirmed for `min_repetitions` reps.
 
-    Probes every step once n_steps >= 2 (the minimum at which any cycle could
-    be confirmed by the structural test). Per-step overhead is bounded by
-    detect_tail_cycle's inner loop, which is O(max_period^2) on tail
-    comparisons — negligible against a model forward pass. Tag emitted is
-    `candidate-basin`, matching the intrinsic terminal-event vocabulary.
+    Probes every step once n_steps >= min_repetitions, calling the
+    structural-only find_tail_cycle_period helper (decoded text and
+    late-window stats are not needed at the predicate gate). Tag emitted
+    is `candidate-basin`, matching the intrinsic terminal-event vocabulary.
 
-    `min_repetitions` is the confirmation threshold: detect_tail_cycle
-    structurally fires at 2 reps (last-p == prev-p), but at K=2 the runtime
-    probe is too permissive — many trajectories transit through brief
-    recurrences en route to a different asymptotic attractor and would be
-    captured prematurely. K=4 (default) matches the empirical distribution
-    of the v1 broad-shallow catalog (every entry had 4+ reps when measured
-    at depth 64). Late-window stats remain the adjudication signal for
+    `min_repetitions` is the confirmation threshold: structural detection
+    fires at 2 reps (last-p == prev-p), but at K=2 the runtime probe is
+    too permissive — many trajectories transit through brief recurrences
+    en route to a different asymptotic attractor and would be captured
+    prematurely. K=4 (default) matches the empirical distribution of the
+    v1 broad-shallow catalog (every entry had 4+ reps when measured at
+    depth 64). Late-window stats remain the adjudication signal for
     crystal vs extended-transient classification, computed post-hoc from
-    the truncated trajectory.
+    the truncated trajectory via detect_tail_cycle.
     """
     def check(history: list[int], records: list[StepRecord], n_steps: int) -> str | None:
         if n_steps < min_repetitions:
             return None
-        sig = detect_tail_cycle(records, max_period, cycle_window, stats_window)
-        if sig is None or sig.repetitions_in_cycle_window < min_repetitions:
+        # Bound to cycle_window to avoid materializing a multi-thousand-elt
+        # slice each step at long depth; min(n_steps, ...) keeps initial_ids
+        # out of the early-step view.
+        token_ids = history[-min(n_steps, cycle_window):]
+        found = find_tail_cycle_period(token_ids, max_period, cycle_window)
+        if found is None or found[1] < min_repetitions:
             return None
         return "candidate-basin"
     return check

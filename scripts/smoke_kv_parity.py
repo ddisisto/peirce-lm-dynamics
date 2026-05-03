@@ -19,13 +19,18 @@ from __future__ import annotations
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from peirce.engine import generate_trajectory
+from peirce.engine import _capture_stack, _spec_for, generate_trajectory
 from peirce.predicates import (
     budget_cap_predicate,
     eos_predicate,
     window_cap_predicate,
 )
-from peirce.records import StepRecord, Trajectory
+from peirce.records import (
+    InferenceStrategy,
+    RankEvent,
+    StepRecord,
+    Trajectory,
+)
 
 MODEL_ID = "EleutherAI/pythia-1b-deduped"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -45,6 +50,7 @@ def _generate_full_context(
     device = next(model.parameters()).device
     history = list(initial_ids)
     steps: list[StepRecord] = []
+    rank_events: list[RankEvent] = []
     terminal = None
     while terminal is None:
         input_ids = torch.tensor([history], device=device)
@@ -56,14 +62,19 @@ def _generate_full_context(
         top2_ids = top2.indices.tolist()
         top2_probs = top2.values.tolist()
         logit_gap = log_probs[top2_ids[0]].item() - log_probs[top2_ids[1]].item()
+        natural_argmax_id = top2_ids[0]
         if len(steps) == 0 and first_step_override is not None:
             chosen_id = first_step_override
+            rank_events.append(RankEvent(
+                position=0, kind="injection",
+                chosen_id=chosen_id, natural_argmax_id=natural_argmax_id,
+            ))
         else:
-            chosen_id = top2_ids[0]
+            chosen_id = natural_argmax_id
         chosen_log_prob = log_probs[chosen_id].item()
         chosen_token = tokenizer.decode([chosen_id])
-        if top2_ids[0] != chosen_id:
-            alt_id, alt_prob = top2_ids[0], top2_probs[0]
+        if natural_argmax_id != chosen_id:
+            alt_id, alt_prob = natural_argmax_id, top2_probs[0]
         else:
             alt_id, alt_prob = top2_ids[1], top2_probs[1]
         alt_token = tokenizer.decode([alt_id])
@@ -78,7 +89,15 @@ def _generate_full_context(
             if tag is not None:
                 terminal = tag
                 break
-    return Trajectory(initial_ids=list(initial_ids), steps=steps, terminal_event=terminal)
+    return Trajectory(
+        stack=_capture_stack(model, None),
+        initial_ids=list(initial_ids),
+        predicates=tuple(_spec_for(p) for p in predicates),
+        inference_strategy=InferenceStrategy(name="hard_cap_t0", params={}),
+        steps=steps,
+        rank_events=rank_events,
+        terminal_event=terminal,
+    )
 
 
 def main() -> None:
@@ -137,6 +156,21 @@ def main() -> None:
             print(f"  ref ids: {ids_ref}")
     print()
     print("PARITY OK" if all_match else "PARITY FAILED")
+
+    # Manifest sanity-print: confirm provenance fields populate on the first
+    # KV trajectory.
+    print()
+    print("Manifest sanity-print (first KV trajectory):")
+    sample = generate_trajectory(
+        model=model, tokenizer=tokenizer, initial_ids=[bos_id],
+        predicates=predicates, first_step_override=branch_ids[0],
+    )
+    print(f"  stack: {sample.stack}")
+    print(f"  initial_ids: {sample.initial_ids}")
+    print(f"  predicates: {sample.predicates}")
+    print(f"  inference_strategy: {sample.inference_strategy}")
+    print(f"  rank_events: {sample.rank_events}")
+    print(f"  terminal_event: {sample.terminal_event} (position={sample.length})")
 
 
 if __name__ == "__main__":

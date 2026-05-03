@@ -169,4 +169,10 @@ def basin_capture_predicate(
         if found is None or found[1] < min_repetitions:
             return None
         return "candidate-basin"
+    check.name = "basin_capture"
+    check.params = {
+        "max_period": max_period,
+        "cycle_window": cycle_window,
+        "min_repetitions": min_repetitions,
+    }
     return check

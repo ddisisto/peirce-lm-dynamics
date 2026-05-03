@@ -2,7 +2,7 @@
 
 *Companion to the [Foundations](foundation.md), [Design Requirements](design-reqs.md), [Records Design](design-reqs-records.md), and [Steered Trajectories Design](design-reqs-steering.md). Reads alongside [observations.md](observations.md) (empirical observations, commit-pinned) and [ideas.md](ideas.md) (forward-looking threads not yet ready for design surfaces). Maps the shape of inquiry across cycles, and the first cycle's concrete moves.*
 
-*Status: v0.4 (2026-05-01). Cycle 1 mid-flight: Phases 0–2 closed at small scale; basin detection v1 and the catalog (v0.2) are formalized; runtime basin-capture predicate is live. Phase 3 (in-fill) is active, with the selection-bias probe and basin-detection v2 as the in-flight directions. The brief is more revisable than the requirements and far more revisable than the foundations. Substantial revision is recorded; minor edits are not.*
+*Status: v0.5 (2026-05-02). Cycle 1 mid-flight: Phases 0–2 closed at small scale; basin detection v1 and the catalog (v0.3) are formalized; runtime basin-capture predicate is live; the selection-bias probe to L_arch is closed and produced the bimodal-capture finding plus a calibrated set of 39 transient trajectories. Phase 3 (in-fill) remains active with **basin detection v2** as the singular remaining in-flight direction. The brief is more revisable than the requirements and far more revisable than the foundations. Substantial revision is recorded; minor edits are not.*
 
 ---
 
@@ -62,7 +62,7 @@ Phase 0 closed a small set of decisions and stood up the infrastructure the rest
 - Per-step thin records: six fields (chosen token id and decoded, log-prob, entropy, alt-token id and decoded, alt-prob, rank-1/rank-2 logit gap), per the [records design](design-reqs-records.md).
 - Basin probe: `peirce/basins.py` carries `detect_tail_cycle(steps, max_period, cycle_window, stats_window) → BasinSignature | None` plus `basin_capture_predicate` that wraps it for runtime use with a K-rep confirmation threshold.
 - Smoke test: `scripts/smoke_engine.py` produces a small ensemble from top-5 BOS branches and prints thin records.
-- Observation log: `observations.md` is the append-only, commit-pinned record of empirical findings. Basin catalog: `basins.md`, currently at v0.2.
+- Observation log: `observations.md` is the append-only, commit-pinned record of empirical findings. Basin catalog: `basins.md`, currently at v0.3.
 
 **Carried into Phase 3.**
 - `peirce/records.py` rework to fully align with the [records design](design-reqs-records.md) — observation packet structure, windows as first-class objects in code, probes architecture — is deferred until something demands it. The current minimal records (six fields) already carry the analytic and reproducibility instrumentation; the structural rework becomes load-bearing when persistence lands or cross-trajectory probes need a uniform interface.
@@ -95,19 +95,24 @@ Adjudication, per candidate cycle: does the probability mass on continuation tok
 **Basin detection v1 + catalog formalization closed across commits `ae95f32` → `08b0ba5`:**
 - Cycle-detection logic in `scripts/representative_deep.py` was promoted to a basin-detection probe in `peirce/basins.py`, per the [records design](design-reqs-records.md) probe interface.
 - Basin identity formalized as the cycle token-id tuple (canonical hashable identity) plus cycle text (decoded, human-readable) plus late-window probability profile. Right level of abstraction validated empirically: trajectories from distinct prefixes that converge to the same cycle are recognized as the same basin.
-- Basin catalog established as `basins.md`, append-only by entry, currently at v0.2 (19 basins / 28 trajectories under the runtime predicate at commit `08b0ba5`).
+- Basin catalog established as `basins.md`, append-only by entry, currently at v0.3 (52 basins / 61 trajectories under the runtime predicate, extended to L_arch by the selection-bias probe at commit `882ae6d`).
 - Runtime basin-capture predicate landed in `peirce/basins.py` with a K-rep confirmation threshold (default K=4) and a corrected `repetitions_in_cycle_window` count (was `tail_n // period`; now counts actual consecutive cycle blocks back from the tail). Methodological detail and reconciliation against the v0.1 catalog are in the 2026-05-01 commit-`08b0ba5` observations entry.
 
 The two outputs together — formalized detection and a catalog of basins — are what the project actually needed more than persisted trajectories at this stage. Trajectories remain well-described for inference-time observation; basins are the structural objects whose identity must persist.
 
 ## Phase 3 — in-fill (active)
 
-Targeted exploration of regions the first two passes surfaced. Two directions are in flight or imminently so; the others are in the candidate set.
+Targeted exploration of regions the first two passes surfaced. The first sub-task — the selection-bias probe — is closed and contributed the bimodal-capture finding and a calibrated transient set; basin detection v2 is the singular remaining in-flight direction.
 
-**In flight or imminent:**
+**Closed within Phase 3:**
 
-- **Selection-bias probe.** Re-run the broad-shallow ensemble with budget extended to L_arch under the runtime basin-capture predicate. Adjudicates the open question: do the 72/100 still-transient trajectories at budget=64 reach basins by L_arch, or remain in transient? Naturally surfaces the v0.1 catalog entries that were not re-confirmed under v0.2 K=4 (basins for trajectories 3, 15, 37, 40, 45 in the v0.1 numbering) and tests whether they materialize as confirmed basins at depth. The runtime predicate makes this cheap: trajectories that capture early stop early; only genuinely transient ones run long.
-- **Basin detection v2 (entropy-floor / logit-gap-floor probe).** v1 catches structural cycles only — exact token-id repetition with period ≤ max_period. Local-success traps that don't repeat exactly (ascending sequences, ordinal cascades, slowly drifting boilerplate) are invisible to v1 but should show as low-entropy or high-gap floors over windows. Calibration distribution comes from the v1 catalog: every v1 basin's late-window entropy and gap profile is a confirmed positive; threshold tuning targets specificity to those without false-positive on natural transients. Naturally complementary to the selection-bias probe — v2 detection running on the extended trajectories likely catches additional basins missed by v1.
+- **Selection-bias probe (commit `882ae6d`, observations entry at `7a8d1cd`).** Re-ran the top-100 broad-shallow ensemble extended to L_arch under the runtime basin-capture predicate (no budget cap). 61/100 captured (vs 28/100 at broad-shallow budget=64); 39/100 remain transient at L_arch. Catalog refreshed to v0.3 with 33 new long-period phrase / boilerplate basins. Four of five v0.1-demoted entries vindicated at depth (trajectories 3, 15, 37, 45); trajectory 40 reassigned to a phrase basin. The defining finding: capture is **bimodal in depth** under hard-cap T=0 from `[BOS]`, with a sharp ~1000-token cutoff (28 captures at ≤64, 28 at 65–256, 5 at 257–1024, 0 at 1025–2047). Trajectories commit fast or not at all within L_arch — there is no slow-converging tail. The 39 uncaptured trajectories show drifting / serially-numbered output (RFC enumerations, footnote numbers, table rows with incrementing IDs, repeating translation patches with version drift) — structurally invisible to a token-level cycle detector. They become the calibration set for v2.
+
+**In flight:**
+
+- **Basin detection v2 (entropy-floor / logit-gap-floor probe).** v1 catches structural cycles only — exact token-id repetition with period ≤ max_period. The 39 transient trajectories from the selection-bias probe are exactly what v1 cannot resolve: low local entropy without strict token-level repetition. v2 should fire on a low-entropy or high-gap floor sustained over a window without requiring exact repetition. Calibration: every v1 basin's late-window entropy and gap profile (from the v0.3 catalog) is a confirmed positive; threshold tuning targets specificity vs the natural transient tail. Detailed planning — predicate signature, window/threshold parameters, false-positive characterization, separator vs basin distinction inside enumerations — is outstanding.
+
+**Next data run (planned, awaiting v2):** repeat the selection-bias structure on the 39 uncaptured trajectories with v2 detection / predicate in place, alongside v1. Same model, same initial conditions, same depth budget; the additional capture comes from v2. Engine performance improvements (currently in flight on the `engine-perf` branch) will be merged before the run, since L_arch=2048 × 39 trajectories is the largest single compute block in the cycle so far.
 
 **Candidate, not yet scheduled:**
 

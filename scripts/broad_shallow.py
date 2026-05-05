@@ -1,36 +1,40 @@
-"""First-cycle broad-shallow run with basin detection: top-100 from [BOS] x 64-token budget.
+"""First-cycle broad-shallow run with basin detection: top-K from [BOS] x 64-token budget.
 
-Generates the top-100 trajectories from the BOS distribution, each run under
-hard-cap T=0 to a budget of 64 steps (or earlier EOS / window-cap). Applies
-the v1 basin-detection probe (tail cycle period + late-window stats from
-peirce.basins) to each trajectory, prints per-trajectory summaries, and
-aggregates by basin identity (cycle token-id tuple) to surface basin
-coalescence — distinct trajectories that landed in the same basin.
+Generates the top-NUM_BRANCHES trajectories from the BOS distribution, each run
+under hard-cap T=0 to a budget of 64 steps (or earlier EOS / candidate-basin /
+window-cap). Persists each as an Observation in the long-lived store via the
+runner — re-runs are cache hits, no inference. Applies the v1 basin-detection
+probe (tail cycle period + late-window stats from peirce.basins) post-hoc to
+each captured trajectory and prints per-trajectory summaries plus basin
+coalescence (distinct trajectories that landed in the same basin).
 
-This is an eyeball pass at small scale; basin signatures are seeded into
-basins.md as the first-cycle catalog.
+NUM_BRANCHES can be overridden via the `BROAD_SHALLOW_TOP_K` env var for
+smoke runs against a smaller subset.
 
 Run via: uv run python scripts/broad_shallow.py
 """
 from __future__ import annotations
 
+import os
+import time
 from collections import Counter, defaultdict
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from peirce.basins import BasinSignature, basin_capture_predicate, detect_tail_cycle
-from peirce.engine import generate_trajectory
 from peirce.predicates import (
     budget_cap_predicate,
     eos_predicate,
     window_cap_predicate,
 )
-from peirce.records import Trajectory
+from peirce.records import Injection, Observation
+from peirce.runner import default_store_path, observe
+from peirce.store import open_store
 
 MODEL_ID = "EleutherAI/pythia-1b-deduped"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-NUM_BRANCHES = 100
+NUM_BRANCHES = int(os.environ.get("BROAD_SHALLOW_TOP_K", "100"))
 BUDGET = 64
 MAX_CYCLE_PERIOD = 16
 CYCLE_WINDOW = 64
@@ -72,6 +76,9 @@ def main() -> None:
         window_cap_predicate(L_arch),
     ]
 
+    store_path = default_store_path()
+    store = open_store(store_path)
+    print(f"Store: {store_path}")
     print(
         f"BOS id: {bos_id}, EOS id: {eos_id}, L_arch: {L_arch}, "
         f"budget: {BUDGET}, branches: {NUM_BRANCHES}"
@@ -80,31 +87,40 @@ def main() -> None:
         f"Basin probe: max_period={MAX_CYCLE_PERIOD}, "
         f"cycle_window={CYCLE_WINDOW}, stats_window={STATS_WINDOW}"
     )
-    print(f"Top-100 BOS-mass total: {sum(branch_probs):.4f}\n")
+    print(f"Top-{NUM_BRANCHES} BOS-mass total: {sum(branch_probs):.4f}\n")
 
-    results: list[tuple[int, float, Trajectory, BasinSignature | None]] = []
+    results: list[tuple[int, float, Observation, BasinSignature | None]] = []
+    n_cached = 0
+    t_start = time.perf_counter()
     for i, (bid, bprob) in enumerate(zip(branch_ids, branch_probs, strict=True)):
-        traj = generate_trajectory(
-            model=model,
-            tokenizer=tokenizer,
+        t_obs = time.perf_counter()
+        obs = observe(
+            store, model, tokenizer,
             initial_ids=[bos_id],
             predicates=predicates,
-            first_step_override=bid,
+            injections=(Injection(position=0, chosen_id=bid),),
         )
-        if traj.terminal_event == "candidate-basin":
+        elapsed = time.perf_counter() - t_obs
+        # Heuristic: a sub-50ms call is a cache hit (DB read only).
+        if elapsed < 0.05:
+            n_cached += 1
+        if obs.terminal_event == "candidate-basin":
             sig = detect_tail_cycle(
-                traj.steps,
+                obs.steps,
                 max_period=MAX_CYCLE_PERIOD,
                 cycle_window=CYCLE_WINDOW,
                 stats_window=STATS_WINDOW,
             )
         else:
             sig = None
-        results.append((bid, bprob, traj, sig))
+        results.append((bid, bprob, obs, sig))
         if (i + 1) % 10 == 0:
-            print(f"  ... {i + 1}/{NUM_BRANCHES}", flush=True)
+            print(f"  ... {i + 1}/{NUM_BRANCHES}  (cached so far: {n_cached})", flush=True)
 
-    terminals = Counter(t.terminal_event for _, _, t, _ in results)
+    t_total = time.perf_counter() - t_start
+    print(f"\nTotal observe loop: {t_total:.1f}s, cache hits: {n_cached}/{NUM_BRANCHES}")
+
+    terminals = Counter(o.terminal_event for _, _, o, _ in results)
     print("\nTerminal event distribution:")
     for tag, n in terminals.most_common():
         print(f"  {tag}: {n}")
@@ -115,9 +131,9 @@ def main() -> None:
 
     print("Per-trajectory summary:")
     print("=" * 120)
-    for i, (bid, bprob, traj, sig) in enumerate(results):
+    for i, (bid, bprob, obs, sig) in enumerate(results):
         branch = tokenizer.decode([bid])
-        token_ids = [s.token_id for s in traj.steps]
+        token_ids = [s.token_id for s in obs.steps]
         decoded = tokenizer.decode(token_ids)
         if sig is not None:
             cycle_tag = f"cyc={sig.period:2d}"
@@ -130,7 +146,7 @@ def main() -> None:
             stats_tag = " " * 17
         print(
             f"[{i:3d}] {branch!r:>14} p={bprob:.4f} "
-            f"{traj.terminal_event:11s} len={traj.length:3d} {cycle_tag} {stats_tag}  "
+            f"{obs.terminal_event:15s} len={obs.length:3d} {cycle_tag} {stats_tag}  "
             f"{preview(decoded)}"
         )
 

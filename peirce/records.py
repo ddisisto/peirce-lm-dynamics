@@ -1,11 +1,22 @@
-"""Trajectory packet and per-step record dataclasses.
+"""Trajectory and Observation dataclasses.
 
-Per design-reqs-records.md, a Trajectory IS the observation packet — the
-citable unit. It carries stack identity, initial condition, predicate set,
-inference strategy, the per-step thin records (canonical layer), the
-rank-event log (sparse annotations on the dense token sequence), and the
-terminal event tag. Aggregate-certainty caching and Window as a first-class
-object are downstream concerns and not yet captured here.
+Per design-reqs-records.md plus a refinement that emerged in persistence
+design: a *trajectory* is what the model produces under a stack, initial
+condition, and any experimenter-specified injections. It unfolds
+deterministically under hard-cap T=0 out to the architectural context
+length. An *observation* is an experimenter's act of running that
+trajectory under a predicate set and stopping when a predicate fires.
+
+Multiple observations can share the same underlying trajectory. A
+budget=64 observation and a budget=256 observation of the same trajectory
+agree on the first 64 steps; the longer observation extends the
+trajectory with the next 192 steps. The store records each trajectory's
+materialized steps once, with observation rows referencing the
+trajectory by id.
+
+Identity:
+- trajectory_id = hash of (stack, initial_ids, injections)
+- observation_id = hash of (trajectory_id, predicates, inference_strategy)
 
 Per-step thin records carry the chosen token (id and decoded), its
 log-probability, the distribution entropy, the most-probable non-chosen
@@ -13,9 +24,12 @@ alternative (id, decoded, probability), and the rank-1/rank-2 logit gap.
 
 The alt fields always identify the dominant alternative to chosen. At T=0
 argmax steps the alternative is rank-2 of the distribution and the pair
-(log_prob, alt_prob) measures escape pressure. At step-0 override or T>0
-sampled steps the alternative is rank-1 (the model's argmax preference)
-and the pair measures divergence between trajectory and model intent.
+(log_prob, alt_prob) measures escape pressure. At injection-overridden
+or T>0 sampled steps the alternative is rank-1 (the model's argmax
+preference) and the pair measures divergence between trajectory and
+model intent. At injection points the rank-1 / chosen divergence is
+discoverable by joining trajectory.injections with the step at that
+position.
 
 The logit_gap is the rank-1 minus rank-2 log-probability (equivalently,
 the rank-1 minus rank-2 logit, since softmax shifts both by the same
@@ -23,10 +37,6 @@ per-step constant). It is the numerical-noise margin: cross-system
 argmax disagreement at this step is plausible when logit_gap falls below
 the producing stack's effective floating-point noise floor (typically
 ~1e-3 to ~1e-4 in fp32, larger in lower precision).
-
-Terminal event position is implicit as len(steps) — the predicate that
-fires terminates after the corresponding step has been appended, so the
-last appended step is the terminal step.
 """
 from __future__ import annotations
 
@@ -64,6 +74,24 @@ class StackIdentity:
 
 
 @dataclass(frozen=True)
+class Injection:
+    """Experimenter-specified intent to force a token at a specific step.
+
+    Position is 0-indexed within the trajectory's steps (not within the
+    full history, which would include initial_ids). An injection at
+    position 0 forces the first generated token; position 1 forces the
+    second; etc.
+
+    Injections are part of trajectory identity because they shape what
+    the model produces. T>0 sample-type non-argmax events (when those
+    land) belong to observations rather than trajectories — they are
+    outcomes of a stochastic inference run, not intents.
+    """
+    position: int
+    chosen_id: int
+
+
+@dataclass(frozen=True)
 class PredicateSpec:
     """Name + params for a terminal predicate, captured for reproducibility.
 
@@ -78,45 +106,72 @@ class PredicateSpec:
 class InferenceStrategy:
     """The inference plan: name plus any plan-level params.
 
-    Currently always `name="hard_cap_t0"`. Future variants — sliding window,
-    temperature sampling, etc. — populate params accordingly. Per-step
-    placement events (first_step_override at T=0, sampling deviations at
-    T>0) are recorded in the rank-event log, not here.
+    Currently always `name="hard_cap_t0"`. Future variants — sliding
+    window, temperature sampling, etc. — populate params accordingly.
+    Per-step placement events (injections at T=0, sampling deviations
+    at T>0) are recorded outside the inference strategy: injections on
+    the trajectory, sampling deviations on the observation.
     """
     name: str
     params: dict[str, Any]
 
 
-@dataclass(frozen=True)
-class RankEvent:
-    """Sparse annotation: a step where the chosen token was placed by
-    injection or sampled non-rank-0, rather than taken as natural argmax.
-
-    Always logged for injections regardless of whether the placed token
-    coincides with the natural argmax — the *fact* of the placement is
-    part of the trajectory's provenance. Readers wanting outcome-divergent
-    events only filter on chosen_id != natural_argmax_id.
-    """
-    position: int
-    kind: str  # "injection" or "sample"
-    chosen_id: int
-    natural_argmax_id: int
-
-
 @dataclass
 class Trajectory:
+    """The underlying object: what the model produces under (stack, initial, injections).
+
+    Defined out to L_arch by the model's deterministic unfolding under
+    hard-cap T=0 plus any specified injections. The `steps` field holds
+    the steps materialized so far across all observations of this
+    trajectory. Observations may observe shorter prefixes — see
+    Observation.observed_length.
+
+    Mutable: extending a trajectory under a longer-budget observation
+    appends to `steps` in place. Identity-defining fields (stack,
+    initial_ids, injections) are not modified after construction.
+    """
     stack: StackIdentity
     initial_ids: list[int]
+    injections: tuple[Injection, ...]
+    steps: list[StepRecord] = field(default_factory=list)
+
+    @property
+    def materialized_length(self) -> int:
+        return len(self.steps)
+
+
+@dataclass(frozen=True)
+class Observation:
+    """An experimenter's act of running a trajectory under predicates.
+
+    Identity is (trajectory_id, predicates, inference_strategy). Two
+    observations of the same trajectory under the same predicates and
+    inference strategy are the same observation. Two observations of
+    the same trajectory under different predicates (e.g., budget=64 vs
+    budget=256) are distinct observations that share trajectory steps.
+
+    `observed_length` is the position at which a predicate fired,
+    terminating this observation. The trajectory itself may have more
+    materialized steps if a longer-budget observation has been recorded
+    against it.
+    """
+    trajectory: Trajectory
     predicates: tuple[PredicateSpec, ...]
     inference_strategy: InferenceStrategy
-    steps: list[StepRecord]
-    rank_events: list[RankEvent] = field(default_factory=list)
-    terminal_event: str = ""
+    terminal_event: str
+    observed_length: int
+
+    @property
+    def steps(self) -> list[StepRecord]:
+        return self.trajectory.steps[:self.observed_length]
 
     @property
     def token_ids(self) -> list[int]:
-        return [*self.initial_ids, *(s.token_id for s in self.steps)]
+        return [
+            *self.trajectory.initial_ids,
+            *(s.token_id for s in self.steps),
+        ]
 
     @property
     def length(self) -> int:
-        return len(self.steps)
+        return self.observed_length

@@ -1,8 +1,8 @@
 """Parity check: KV-cache engine vs. full-context reference.
 
-For each of NUM_BRANCHES top-k branches from [BOS], runs generate_trajectory
-(KV-cache) and a local _generate_full_context reference (re-encodes the
-whole history every step, matching the previous engine's behaviour).
+For each of NUM_BRANCHES top-k branches from [BOS], runs observe_trajectory
+(KV-cache + prefill) and a local _generate_full_context reference (re-encodes
+the whole history every step, matching the pre-KV-cache engine's behaviour).
 
 Pass criterion is exact token-id identity, since the argmax sequence is
 what defines a trajectory. Per-step scalars (log_prob, entropy, logit_gap)
@@ -19,7 +19,12 @@ from __future__ import annotations
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from peirce.engine import _capture_stack, _spec_for, generate_trajectory
+from peirce.engine import (
+    _capture_stack,
+    _spec_for,
+    fresh_trajectory,
+    observe_trajectory,
+)
 from peirce.predicates import (
     budget_cap_predicate,
     eos_predicate,
@@ -27,7 +32,8 @@ from peirce.predicates import (
 )
 from peirce.records import (
     InferenceStrategy,
-    RankEvent,
+    Injection,
+    Observation,
     StepRecord,
     Trajectory,
 )
@@ -39,21 +45,27 @@ BUDGET = 16
 
 
 @torch.no_grad()
-def _generate_full_context(
+def _observe_full_context(
     model,
     tokenizer,
-    initial_ids,
+    trajectory: Trajectory,
     predicates,
-    first_step_override=None,
-):
-    """Full-context reference: re-encodes the whole history each step."""
+) -> Observation:
+    """Full-context reference: re-encodes the whole history each step.
+
+    Matches the pre-KV-cache engine, including injection handling. Used
+    as the parity reference for observe_trajectory's prefill+KV path.
+    """
     device = next(model.parameters()).device
-    history = list(initial_ids)
-    steps: list[StepRecord] = []
-    rank_events: list[RankEvent] = []
+    full_history = list(trajectory.initial_ids)
+    for s in trajectory.steps:
+        full_history.append(s.token_id)
+    injection_at = {inj.position: inj.chosen_id for inj in trajectory.injections}
+    pred_specs = tuple(_spec_for(p) for p in predicates)
+    inference_strategy = InferenceStrategy(name="hard_cap_t0", params={})
     terminal = None
     while terminal is None:
-        input_ids = torch.tensor([history], device=device)
+        input_ids = torch.tensor([full_history], device=device)
         logits = model(input_ids).logits[0, -1, :]
         log_probs = torch.log_softmax(logits, dim=-1)
         probs = log_probs.exp()
@@ -63,14 +75,8 @@ def _generate_full_context(
         top2_probs = top2.values.tolist()
         logit_gap = log_probs[top2_ids[0]].item() - log_probs[top2_ids[1]].item()
         natural_argmax_id = top2_ids[0]
-        if len(steps) == 0 and first_step_override is not None:
-            chosen_id = first_step_override
-            rank_events.append(RankEvent(
-                position=0, kind="injection",
-                chosen_id=chosen_id, natural_argmax_id=natural_argmax_id,
-            ))
-        else:
-            chosen_id = natural_argmax_id
+        position = len(trajectory.steps)
+        chosen_id = injection_at.get(position, natural_argmax_id)
         chosen_log_prob = log_probs[chosen_id].item()
         chosen_token = tokenizer.decode([chosen_id])
         if natural_argmax_id != chosen_id:
@@ -78,25 +84,23 @@ def _generate_full_context(
         else:
             alt_id, alt_prob = top2_ids[1], top2_probs[1]
         alt_token = tokenizer.decode([alt_id])
-        steps.append(StepRecord(
+        trajectory.steps.append(StepRecord(
             token_id=chosen_id, token=chosen_token, log_prob=chosen_log_prob,
             entropy=entropy, alt_token_id=alt_id, alt_token=alt_token,
             alt_prob=alt_prob, logit_gap=logit_gap,
         ))
-        history.append(chosen_id)
+        full_history.append(chosen_id)
         for predicate in predicates:
-            tag = predicate(history, steps, len(steps))
+            tag = predicate(full_history, trajectory.steps, len(trajectory.steps))
             if tag is not None:
                 terminal = tag
                 break
-    return Trajectory(
-        stack=_capture_stack(model, None),
-        initial_ids=list(initial_ids),
-        predicates=tuple(_spec_for(p) for p in predicates),
-        inference_strategy=InferenceStrategy(name="hard_cap_t0", params={}),
-        steps=steps,
-        rank_events=rank_events,
+    return Observation(
+        trajectory=trajectory,
+        predicates=pred_specs,
+        inference_strategy=inference_strategy,
         terminal_event=terminal,
+        observed_length=len(trajectory.steps),
     )
 
 
@@ -123,22 +127,22 @@ def main() -> None:
 
     all_match = True
     for i, bid in enumerate(branch_ids):
-        traj_kv = generate_trajectory(
-            model=model, tokenizer=tokenizer, initial_ids=[bos_id],
-            predicates=predicates, first_step_override=bid,
+        traj_kv = fresh_trajectory(
+            model, [bos_id], injections=(Injection(position=0, chosen_id=bid),),
         )
-        traj_ref = _generate_full_context(
-            model=model, tokenizer=tokenizer, initial_ids=[bos_id],
-            predicates=predicates, first_step_override=bid,
+        obs_kv = observe_trajectory(model, tokenizer, traj_kv, predicates)
+        traj_ref = fresh_trajectory(
+            model, [bos_id], injections=(Injection(position=0, chosen_id=bid),),
         )
-        ids_kv = [s.token_id for s in traj_kv.steps]
-        ids_ref = [s.token_id for s in traj_ref.steps]
+        obs_ref = _observe_full_context(model, tokenizer, traj_ref, predicates)
+        ids_kv = [s.token_id for s in obs_kv.steps]
+        ids_ref = [s.token_id for s in obs_ref.steps]
         ids_match = ids_kv == ids_ref
         max_lp_diff = 0.0
         max_H_diff = 0.0
         max_gap_diff = 0.0
         if ids_match:
-            for s_kv, s_ref in zip(traj_kv.steps, traj_ref.steps, strict=True):
+            for s_kv, s_ref in zip(obs_kv.steps, obs_ref.steps, strict=True):
                 max_lp_diff = max(max_lp_diff, abs(s_kv.log_prob - s_ref.log_prob))
                 max_H_diff = max(max_H_diff, abs(s_kv.entropy - s_ref.entropy))
                 max_gap_diff = max(max_gap_diff, abs(s_kv.logit_gap - s_ref.logit_gap))
@@ -146,7 +150,7 @@ def main() -> None:
         flag = "OK " if ids_match else "FAIL"
         print(
             f"[{flag}] branch {i} bid={bid}: "
-            f"kv_len={traj_kv.length} ref_len={traj_ref.length} "
+            f"kv_len={obs_kv.length} ref_len={obs_ref.length} "
             f"ids_match={ids_match} "
             f"max_lp_diff={max_lp_diff:.2e} max_H_diff={max_H_diff:.2e} "
             f"max_gap_diff={max_gap_diff:.2e}"
@@ -156,21 +160,6 @@ def main() -> None:
             print(f"  ref ids: {ids_ref}")
     print()
     print("PARITY OK" if all_match else "PARITY FAILED")
-
-    # Manifest sanity-print: confirm provenance fields populate on the first
-    # KV trajectory.
-    print()
-    print("Manifest sanity-print (first KV trajectory):")
-    sample = generate_trajectory(
-        model=model, tokenizer=tokenizer, initial_ids=[bos_id],
-        predicates=predicates, first_step_override=branch_ids[0],
-    )
-    print(f"  stack: {sample.stack}")
-    print(f"  initial_ids: {sample.initial_ids}")
-    print(f"  predicates: {sample.predicates}")
-    print(f"  inference_strategy: {sample.inference_strategy}")
-    print(f"  rank_events: {sample.rank_events}")
-    print(f"  terminal_event: {sample.terminal_event} (position={sample.length})")
 
 
 if __name__ == "__main__":

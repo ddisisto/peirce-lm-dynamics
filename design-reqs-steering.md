@@ -4,6 +4,8 @@
 
 *Status: v0.1, forward-looking. The thread itself is deferred in the primary design requirements (see "Perturbation and escape studies"); this document specifies it well enough that picking it up later does not lose context.*
 
+*Unchanged as of `6245a01` (persistence merge); this thread has not been picked up. When picked up, cross-check against the post-persistence implementation surface (`peirce/`, `peirce/CLAUDE.md`) — the records / store / runner shape that was speculative when this document was written now exists in code.*
+
 ---
 
 ## What this document is

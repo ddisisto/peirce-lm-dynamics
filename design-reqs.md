@@ -4,6 +4,8 @@
 
 *Status: v2.3. Requirements are revisable; revisions are recorded. Significant revisions that conflict with the Foundations require a re-founding cycle.*
 
+*Held as historical as of `6245a01` (persistence merge). The implementation surface (records / store / runner / engine / predicates) is now described authoritatively by the code in `peirce/` plus `peirce/CLAUDE.md` and `peirce/README.md`. This document remains useful for narrative continuity and design rationale but is not authoritative for what currently exists. Will be revisited only when subsumed by the catalog-as-data-source rework or when a concrete need forces the touch.*
+
 ---
 
 ## What this document is

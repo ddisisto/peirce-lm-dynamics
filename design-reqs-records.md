@@ -4,6 +4,8 @@
 
 *Status: v0.1. Revisable; revisions recorded. Foundations supremacy applies.*
 
+*Held as historical as of `6245a01` (persistence merge). The trajectory / observation split, content-addressed identity scheme, and per-step thin record now exist in code (`peirce/records.py`, `peirce/store.py`) — the schema there is authoritative. This document captures the design rationale and pre-implementation requirements; useful for narrative but not for current spec.*
+
 ---
 
 ## What this document is

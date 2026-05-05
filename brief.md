@@ -4,6 +4,8 @@
 
 *Status: v0.5 (2026-05-02). Cycle 1 mid-flight: Phases 0–2 closed at small scale; basin detection v1 and the catalog (v0.3) are formalized; runtime basin-capture predicate is live; the selection-bias probe to L_arch is closed and produced the bimodal-capture finding plus a calibrated set of 39 transient trajectories. Phase 3 (in-fill) remains active with **basin detection v2** as the singular remaining in-flight direction. The brief is more revisable than the requirements and far more revisable than the foundations. Substantial revision is recorded; minor edits are not.*
 
+*Held as historical as of `6245a01` (persistence merge). The brief's first-cycle work has largely been done; the per-path `peirce/CLAUDE.md` + `scripts/CLAUDE.md` + well-named code now carry the "what is" load. Forward sequence lives in [ROADMAP.md](ROADMAP.md); empirical state in [observations.md](observations.md); basin catalog in [basins.md](basins.md). This document will be revisited only when subsumed by the catalog-as-data-source rework or when a concrete need forces the touch — content here is interpretable but not authoritative for current implementation.*
+
 ---
 
 ## What this document is

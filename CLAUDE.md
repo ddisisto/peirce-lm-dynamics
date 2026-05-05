@@ -2,18 +2,17 @@
 
 *Shapes the context loaded into every Claude session at this path. README.md is the human-facing entry point; this file is for Claude's working context. `MEMORY.md` (auto-loaded) is the per-topic memory index.*
 
-*Last reviewed: `225f9fc` / 2026-05-05. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
+*Last reviewed: `33e56ec` / 2026-05-05. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
 
 ## Always loaded
 
 @README.md
 @foundation.md
-@design-reqs.md
-@design-reqs-records.md
-@design-reqs-steering.md
-@brief.md
+@ROADMAP.md
 
-`observations.md`, `basins.md`, and `ideas.md` grow over time and are read by reference, not @-included.
+Other project docs are read by reference, not @-included:
+- `brief.md`, `design-reqs.md`, `design-reqs-records.md`, `design-reqs-steering.md` — subject to drift; held out of the auto-loaded set until the design-reqs refactor (per ROADMAP) settles them.
+- `observations.md`, `basins.md`, `ideas.md` — grow over time; loaded on demand when relevant to the work.
 
 ## Working model
 

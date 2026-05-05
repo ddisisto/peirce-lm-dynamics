@@ -2,7 +2,7 @@
 
 *Shapes the context loaded into every Claude session at this path. README.md is the human-facing entry point; this file is for Claude's working context. `MEMORY.md` (auto-loaded) is the per-topic memory index.*
 
-*Last reviewed: `33e56ec` / 2026-05-05. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
+*Last reviewed: `6245a01` / 2026-05-05. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
 
 ## Always loaded
 

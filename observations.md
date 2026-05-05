@@ -280,3 +280,31 @@ Probe parameters were extended (`max_period 16 → 32, cycle_window 64 → 256, 
 The runtime predicate is now the bottleneck for cycle-based capture — it captures everything cycle-detectable and frees all the budget that would otherwise be wasted running cycle-captured trajectories to L_arch. The 39 uncaptured trajectories cost L_arch=2047 forward passes each; the 61 captured trajectories cost their median 77. Total forward passes ~ 39·2047 + 61·107 ≈ 86 k vs 100·2047 ≈ 205 k for an unconditional L_arch run — ~58% saved. The remaining inefficiency is structural: catching the long transients requires the next detector class.
 
 The selection-bias probe is the closing observation of basin detection v1. The next direction is basin detection v2 (entropy-floor / logit-gap-floor) targeted at the 39 uncaptured trajectories, calibrated against the v0.3 catalog as confirmed-positive distribution.
+
+## 2026-05-05 — persistence layer merged; dtype lands at fp16; aggregate deltas within boundary-case envelope
+
+**Commit:** `6245a01` (merge of PR #1 from `persistence`)
+**Run:** `uv run python scripts/broad_shallow.py && uv run python scripts/selection_bias.py` (artifacts persisted to `data/peirce.db`)
+**Config:** model `EleutherAI/pythia-1b-deduped` (**fp16**, GTX 1070), initial `[BOS]`, top-100 from BOS, T=0 hard-cap. Broad-shallow: budget 64, K=4 with `max_period=16, cycle_window=64, stats_window=32`. Selection-bias: run to L_arch=2048, K=4 with `max_period=32, cycle_window=256, stats_window=256`. Selection-bias re-uses broad-shallow's 100 trajectories via the runner — trajectory rows cache-hit and the engine prefills from the existing 64 steps.
+
+### Aggregate
+
+|                | broad-shallow (budget 64) | selection-bias (L_arch 2048) |
+|----------------|---------------------------|------------------------------|
+| captured       | 29                        | 63                           |
+| budget_cap     | 71                        | —                            |
+| window_cap     | —                         | 37                           |
+
+Distinct basins across the selection-bias ensemble: ~54 (estimate from PR body; not re-derived by re-running cycle detection on the persisted tails). Catalog v0.3 remains the canonical fp32 record.
+
+### Headlines
+
+- **Persistence layer landed.** Trajectory / observation split keyed by content-addressed hashes (blake2b-16 of canonical-JSON manifests). `data/peirce.db` holds 100 trajectories + 200 observations + 82,704 trajectory_steps in 12 MB. Selection-bias's 100 budget=64 prefixes hit the broad-shallow trajectory rows and extended via KV-cache prefill — the lensing-against-persisted-data capability the v2 design needs is now in hand.
+- **Stack identity now includes dtype as fp16.** The persisted ensemble is a structurally distinct population from the fp32 catalog v0.3. Going forward, fp16 is the project default; v0.3 stays frozen as the fp32 record. This is a forward-consistency call, not a re-adjudication of v0.3.
+- **Capture-count deltas are within the fp32 → fp16 boundary-case envelope.** Broad-shallow: 28 → 29 captured (+1). Selection-bias: 61 → 63 captured (+2). Distinct basins: 52 → ~54. Two-trajectory and two-basin shifts under T=0 hard-cap match the order-of-magnitude expectation for argmax flips at borderline log-prob ties under reduced precision. The deltas do not change the qualitative findings of the `882ae6d` selection-bias entry: bimodal capture distribution, ~1000-token cutoff, transient territory substantive (now 37/100 rather than 39/100), v0.2 basin coalescence membership unchanged.
+- **Per-trajectory diffing deliberately deferred.** Identifying *which* trajectories flipped and *which* basins are new would require running cycle detection on the persisted tails and matching cycle-token-id tuples against the v0.3 catalog. Cost/benefit at this stage is poor: the roadmap doesn't move, the observations hardly change. The catalog as instrumented data source/sink is a future direction; until then, the present note is the record of the dtype transition.
+
+### Methodological
+
+- **The catalog as currently maintained is a hand-curated markdown artifact pinned to a specific run.** Re-deriving it across a stack-identity change is manual work disproportionate to the value at this stage. A future iteration will likely re-invent the catalog as a query over the persisted store rather than a hand-curated document, at which point dtype changes are no-cost.
+- **The persistence layer's content-addressed identity scheme (stack + initial_ids + injections for trajectories; trajectory_id + predicates + inference_strategy for observations) makes the dtype boundary clean automatically.** No special handling needed — fp32 trajectory rows would coexist with fp16 ones in the same DB if both were generated, distinguishable by their stack hash. The store layer already carries the discipline that the catalog format does not yet have.

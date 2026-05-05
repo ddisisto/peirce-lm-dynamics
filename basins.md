@@ -4,6 +4,8 @@
 
 *Status: v0.3, extended at depth under the selection-bias probe (commit `882ae6d`). Basin entries are append-only across runs by cycle-token-id identity; the document is reorganized on methodology changes.*
 
+*Dtype boundary: catalog v0.1–v0.3 are pinned to fp32 runs. Going forward (commit `6245a01` and later), the project default is fp16 — see [observations.md](observations.md) "2026-05-05 — persistence layer merged" for the aggregate delta and the deferral of per-trajectory diff. v0.3 is frozen as the fp32 record; v0.4+ will be fp16-derived. The catalog is likely to be re-invented as a query over the persisted store before v0.4 lands.*
+
 *Basin classification (e.g. local-success-trap vs crystal) is deferred — see [ideas.md](ideas.md) "EOS as implicit-success signal", subsection "local-success traps". Adjudication requires perturbation response, which is not yet implemented.*
 
 ---

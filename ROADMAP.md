@@ -2,24 +2,21 @@
 
 *Forward sequence of branches and milestones leading to the next data run. Companions: [brief.md](brief.md) for the shape of inquiry and Cycle 1's conceptual moves; [observations.md](observations.md) for commit-pinned empirical findings; [basins.md](basins.md) for the basin catalog. Updated when a step closes or its scope changes.*
 
-*Status: 2026-05-05. Cycle 1 mid-flight. Selection-bias probe at L_arch closed (catalog v0.3); basin detection v2 is the singular substantive in-flight design direction. Three sequential branches stand between current state and the next data run.*
+*Status: 2026-05-05. Cycle 1 mid-flight. Selection-bias probe at L_arch closed (catalog v0.3, fp32); persistence layer merged (`6245a01`); project default now fp16. Basin detection v2 is the singular substantive in-flight design direction. Two sequential branches stand between current state and the next data run.*
 
 ---
 
 ## Current position
 
-Main is at `212c086`: brief v0.5, catalog v0.3, top-level CLAUDE.md, engine-perf merged (records / engine reshaped for trajectory packets, KV cache threaded, structural-only cycle finder lifted out of `detect_tail_cycle`). The `persistence` branch is one commit ahead of main with the persistence layer staged for merge.
+Main is at `6245a01` (merge of PR #1 from `persistence`): persistence layer landed (trajectory/observation split keyed by content-addressed hashes, KV-cache prefill, runner). `data/peirce.db` carries 100 broad-shallow + 100 selection-bias observations under fp16. Catalog v0.3 frozen as fp32 record; aggregate fp32→fp16 deltas captured in observations.md `2026-05-05` entry.
 
 ## Branch sequence to next data run
 
-### 1. `persistence` (in flight)
+### 1. ~~`persistence`~~ — closed (`6245a01`)
 
-Lands the persistence layer (trajectory/observation split, prefill-extension, runner) on top of the merged engine-perf work. Implementation driven from session "persistence". On merge, the dense-records lensing capability becomes available — exploratory v2 design can iterate against persisted data rather than re-running the model.
+Persistence layer (trajectory/observation split, prefill-extension, runner) merged. Dense-records lensing capability available — exploratory v2 design can iterate against persisted data rather than re-running the model. Project dtype landed at fp16 alongside the merge.
 
-- **Prerequisite for:** all subsequent steps. Design-reqs refactor needs the new packet shape settled; basin v2 design needs lensing-against-persisted-data.
-- **Exit criteria:** persistence layer merged; one selection-bias-equivalent run captured to disk that can be re-loaded for analysis.
-
-### 2. `design-reqs-refactor` (planned, after `persistence` merges)
+### 2. `design-reqs-refactor` (planned, next)
 
 Refactors the design-reqs surface to align with the implementation as it actually landed: trajectory packets per design-reqs-records, persistence as first-class, probes architecture. Driven from a dedicated session "design-reqs-refactor". Subdir likely with its own README.md and CLAUDE.md following the discipline established in `212c086`.
 
@@ -28,7 +25,7 @@ Refactors the design-reqs surface to align with the implementation as it actuall
 
 ### 3. `basin-v2` (planned, after `design-reqs-refactor` merges)
 
-Designs and implements basin detection v2 — entropy-floor / logit-gap-floor probe targeted at the 39 transient trajectories from the selection-bias probe. Calibration distribution: the v0.3 catalog (confirmed positives) and the 39 transients (candidate positives). The pre-design probe — load v0.3 basins and the 39 transients, plot (late-H, late-gap) distributions across window sizes — happens early on this branch using the persistence layer.
+Designs and implements basin detection v2 — entropy-floor / logit-gap-floor probe targeted at the 37 transient trajectories from the fp16 selection-bias run (39 in fp32; persistence-merge produced 37). Calibration distribution: the v0.3 catalog (confirmed positives, fp32) plus the captured fp16 ensemble (confirmed positives, fp16) and the 37 fp16 transients (candidate positives). The pre-design probe — load captured trajectories and the 37 transients from `data/peirce.db`, plot (late-H, late-gap) distributions across window sizes — happens early on this branch using the persistence layer.
 
 Open design questions named for resolution on this branch:
 
@@ -41,7 +38,7 @@ Open design questions named for resolution on this branch:
 
 ### 4. Next data run
 
-Repeat the selection-bias structure on the 39 uncaptured trajectories with v2 detection / predicate in place, alongside v1. Same model, same initial conditions, same depth budget; the additional capture comes from v2. Generates the next observations.md entry and a v0.4 catalog refresh. This milestone closes the v1-detection-only era and re-engages the empirical loop.
+Repeat the selection-bias structure on the 37 fp16 uncaptured trajectories with v2 detection / predicate in place, alongside v1. Same model, same initial conditions, same depth budget; the additional capture comes from v2. Generates the next observations.md entry and a v0.4 catalog refresh (fp16-derived). The catalog itself may be re-invented as a query over the persisted store as part of this step. This milestone closes the v1-detection-only era and re-engages the empirical loop.
 
 ## Beyond Cycle 1
 

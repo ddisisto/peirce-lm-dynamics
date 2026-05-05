@@ -8,9 +8,16 @@ what the predicates need, or generates fresh otherwise.
 
 Engine code stays store-unaware. Store code stays inference-unaware. The
 runner makes them cooperate.
+
+`default_store_path()` resolves the canonical long-lived store location
+(repo-root `data/peirce.db`, or `$PEIRCE_STORE` if set), creating the
+parent directory if needed. Scripts that just want "the store" call
+this and pass the result to `open_store`.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Sequence
 
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
@@ -28,6 +35,22 @@ from .store import (
     trajectory_hash_from_parts,
     write_observation,
 )
+
+
+def default_store_path() -> Path:
+    """Canonical store path: $PEIRCE_STORE if set, else <repo>/data/peirce.db.
+
+    Creates the parent directory if it does not exist. Repo root is
+    inferred as the parent of the peirce package directory.
+    """
+    env = os.environ.get("PEIRCE_STORE")
+    if env:
+        path = Path(env)
+    else:
+        repo_root = Path(__file__).resolve().parent.parent
+        path = repo_root / "data" / "peirce.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def observe(

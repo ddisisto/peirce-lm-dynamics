@@ -453,3 +453,88 @@ The entropy-floor / logit-gap-floor framing in ROADMAP and the prior calibration
 - **The persistence layer + content-addressed identity made this finding cheap to obtain.** Once full_depth_extension.py landed, all subsequent analysis is read-only over the store with no further inference. The probe edit (one line: `obs.steps` → `obs.trajectory.steps`) was the only code change needed to surface the corrected picture. The trajectory-vs-observation split in `peirce.records` is doing exactly what it was designed to do — multiple observation rows sharing trajectory_steps, the longer one extending the shorter without re-running.
 - **The 2026-05-06 calibration entry's discipline of pinning to a commit means it remains true and reproducible against `195e5c4`'s data view.** The reproduction protocol surfaces exactly what the entry reported. The interpretation correction is what landed in this entry, not a rewrite of the prior entry. Append-only working as designed.
 - **The full-depth extension is now the canonical lens for v2 calibration.** Future v2 work operates over `data/peirce.db` post-extension as a fixed substrate; iterating on detector shape doesn't require re-running inference.
+
+---
+
+## 2026-05-08 — three-regime taxonomy at depth; crystal hypothesis sharpens to a falsifiable claim
+
+**Commit:** `c0f3f1f` (main; `e4d1b78` squashed basin-v2 substrate, `f56cec5` introduced the shape-metrics + slot-readout, `39d8d6a` merged plots).
+**Run:** `uv run python scripts/plot_trajectories.py && uv run python scripts/high_h_readout.py`
+**Config:** read-only over `data/peirce.db` (100 fp16 trajectories × 2047 materialized steps from `full_depth_extension.py`). No model load, no inference. The canonical-predicate filter (`eos + basin_capture(K=4, period≤32, window=256) + window_cap`) is the population.
+
+This entry records the substantive positive finding that came after the 2026-05-07 depth-collapse correction. Where that entry adjudicated what does *not* separate the populations (entropy floor, logit-gap floor — both are depth phenomena, not basin phenomena), this one names what *does*.
+
+### Per-trajectory shape metrics replace the v1 terminal-event split
+
+Five metrics, all computable from per-step records over the deep window `[1024, end)`:
+
+- **`onset`** — first position holding below H<0.1 for 8 consecutive steps (collapse speed).
+- **`floor_H`, `floor_gap`** — median entropy, median logit gap over the deep window.
+- **`osc_amp`** — std of entropy over the deep window (oscillation amplitude).
+- **`period`** — dominant lag from autocorrelation of mean-subtracted deep-window entropy (None when variance is below noise).
+
+Population stats over n=100, population-blind:
+
+| metric    | min    | p25    | p50    | p75    | max    | none |
+|-----------|-------:|-------:|-------:|-------:|-------:|-----:|
+| onset     | 25     | ~110   | 171    | ~250   | 616    | 4    |
+| floor_H   | 0.0003 | —      | 0.0026 | —      | 0.1326 | —    |
+| osc_amp   | ~0.001 | —      | —      | —      | 0.407  | —    |
+| period    | 1      | —      | —      | —      | ~120   | 3    |
+
+The candidate-basin / window_cap split (63 / 37) does not separate any of these distributions in a way that survives full-depth measurement; the split is held as a record of where the v1 predicate fired, not as a population axis.
+
+### The (H, gap) per-step relationship is a 1-D manifold
+
+Per-step (entropy, logit_gap) hex density across all ~205k steps shows an L-shape: dense corner at H≈0, gap≈10 (collapsed states); sparse arc tracing from H~3, gap~0 down to the corner (transient). Per-trajectory deep-window (floor_H, floor_gap) lies on a near-monotonic log-log curve with `osc_amp` varying smoothly along it. Implication: the gap/H ratio is not an information-rich axis once you know either coordinate. What carries information is *position along the manifold over time*, which `osc_amp` captures.
+
+This narrows the taxonomic seam to two scalars: where on the manifold a trajectory sits at depth (`floor_H` or equivalently `floor_gap`), and how much it wanders along the manifold (`osc_amp`). The wandering is what separates the regimes.
+
+### Three regimes
+
+Provisional names based on the empirical structure:
+
+- **R1 — pinned cycles.** `osc_amp` < ~0.005. Token-level deterministic loops with no internal slot structure. Approximate count in n=100: ~42. Examples from the substrate: table-divider glyphs `---+---+---+` (`48a8a855`); URL paths `/1/roles/1/` (`06e46d02`); checkbox patterns `[x] [x] [x]` (`40380189`, `9a2c70a8`); JSON tokens `string\string\string` (`28657567`); pinned NCBI URL fragment (`eec153e5`).
+- **R2 — mode-locked structural attractors.** `osc_amp` 0.005–0.05 with `alt_prob` at high-H positions <~0.01. Template structure with phase positions that *should* admit class members, but the prior at those positions has collapsed to one mode. Chosen token at a given phase is the same on every recurrence; alt is a deeply unfavored runner-up. Examples: HackerNews comment-thread cycles locked on a single username (`d8e73c51` "jamesblonde", `134c9875` "joshu", `fe8a36a8` "jimmy1"); Nintendo wiki paragraph cycle (`f0a9edaa`, alt='Q' at p≈0.007); government-news prose `The government has also announced…` (`d728e9bd`, alt='This' at p≈0.001).
+- **R3 — class-enumeration attractors.** `osc_amp` > ~0.05 with chosen-token rotation across recurrences at slot positions. The phase-position alt distribution reads out the model's prior over the slot's implicit class. Examples present in the substrate, with their slot classes:
+  - `7ce033c6` — chronic-disease enumeration (Chronic heart / liver / kidney disease)
+  - `05677c58` — ordinal-day enumeration (nine, sevent[ieth], thirty)
+  - `11b07bda` — counting words (`The [N]-first thing to note is`)
+  - `d58ffabc` — paper baselines list (Baseline 41, 42, 51, 61, 65)
+  - `e1069ae4` — patent ordinal-component slot (first / second / contact conductive layer; alt_prob ~0.25)
+  - `1453d66b` — JSON product catalog with percentage slot at H≈3.4
+  - `e1afc61b` — academic Current-Address footer with reference numbers rolling 36–41
+
+The R2 vs R3 separator is **chosen-token entropy across recurrences at a given phase position**: ~0 in R2 (model picks the same token every time at every phase), > 0 in R3 (one or more phases have rotation). This is a single statistic per attractor, computable read-only from the existing data once cycle period is known. Implementation is N1 in `findings.md`.
+
+### Crystal hypothesis sharpens
+
+`foundation.md` defines crystal as "an attractor whose stability appears to derive from the relational density of its content". `realignment.md` flagged that this was not empirically separable from "high-likelihood absorbing region" as the decoding-quality literature describes it. The three-regime split gives a separability test:
+
+> A semantic-crystal-as-measurement-instrument is an R3 attractor: an attractor with at least one phase position whose chosen-token distribution across recurrences is non-degenerate, with the alt distribution at that position approximating the model's prior over a nameable class.
+
+Falsifiable, predictable from the seed, and not (to current knowledge) named in the degeneration literature, which suppresses these regimes rather than reading them. The earlier "crystal vs local-success-trap" pair from `ideas.md` roughly maps to R3 vs R1∪R2; R2 — template structure with collapsed prior — is now the new distinct category, and several specimens previously held as candidate-crystals on visual content turn out to be R2 once the chosen-across-recurrences statistic is computed.
+
+### Reading the H-trace as attentional alignment
+
+High-H positions in R3 attractors are where the model's prior is being read out (slot fillers); low-H stretches are template scaffolding (commas, "and", periods, list markers). Reading-attention aligned with high-H positions is reading the model's prior over a class. The pragmatist guard: the H-trace is computable from the trajectory alone, before any human reads anything; predictions of slot positions and class memberships are made before the reading and checked against it. A seeded class-enumeration experiment (N3 in `findings.md`) is where this earns its keep; the descriptive readout from the existing 100 trajectories is the organic prior.
+
+### Adjudicated
+
+- **A three-regime taxonomy is supported by the data.** R1 (pinned), R2 (mode-locked structural), R3 (class-enumeration) exhaust the n=100 substrate up to the boundary calls. R2 vs R3 has a single-statistic separator (chosen-token entropy across recurrences) that is read-only computable.
+- **The (H, gap) per-step relationship is a 1-D manifold** at the population level. gap/H ratio is not an information-rich axis; trajectory motion along the manifold is.
+- **Crystal becomes operational.** R3-as-measurement-instrument is the falsifiable formalization: it predicts which attractors have readable class-priors and which do not, before the trajectory runs.
+- **Some R3 attractors are present in the existing substrate** without any seed engineering — chronic-disease enumeration, ordinal-day list, paper-baselines roster, patent ordinal-component template, counting words. The model lands in class-enumeration regimes from `[BOS]` alone in roughly 20–25% of trajectories.
+
+### Suggestive but not yet adjudicated
+
+- **The R2 / R3 boundary is a guess until N1 lands.** The 58 STRUCTURED specimens (from `high_h_readout.py`) are the candidate set; the rough 25–30 vs 20–25 R2/R3 split here is by visual inspection of chosen-vs-alt patterns at the top-H positions, not by computed phase-entropy. N1 mechanizes the call.
+- **R1 contains tokenization-edge variability cases that may want their own micro-class.** `e3da051e` and `b9eeb9e9` (the `############` comment-line cycles) have `osc_amp` slightly above the R1 ceiling but their structure is closer to pinned-with-tokenization-noise than to mode-locked. The cleanness of the R1 / R2 boundary at the threshold awaits N1.
+- **Whether R3 attractors' slot-class-priors are predictable from the seed alone.** The descriptive readout shows the priors; the predictive claim (that we can name the class before reading the trajectory) is the seeded-enumeration experiment in N3.
+- **Whether perturbation distinguishes R2 from R3 at the dynamics level** — i.e., whether R3 attractors re-absorb cyclic perturbations at their own period and R2 attractors do not. The perturbation operator is `Injection(position=k, chosen_id=alt_token_id)` with KV-cache prefill; runtime cost is small. This is N2.
+
+### Methodological
+
+- **Two scripts produced everything in this entry.** `plot_trajectories.py` makes four matplotlib figures under `data/plots/` (gitignored, reproducible); `high_h_readout.py` writes the per-trajectory top-H readout with chosen / alt / context tokens to stdout. Both are read-only over `data/peirce.db`. No model load.
+- **The persistence layer paid off again.** This finding required no inference beyond what `full_depth_extension.py` produced; iterating on the analysis was sub-second per script run.
+- **`findings.md` consolidates the full content.** This entry is the pinned-to-commit empirical record; `findings.md` carries the project / terminology / execution implications (regime names, crystal-definition update, doc-state implications, research moves N1–N5) and is held as a single working file pending the post-N1 redistribution. `realignment.md` is the upstream re-founding-cycle document.

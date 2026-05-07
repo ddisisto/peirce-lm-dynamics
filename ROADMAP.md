@@ -2,7 +2,7 @@
 
 *Forward sequence of branches and milestones leading to the next data run. Companions: [brief.md](brief.md) for the shape of inquiry and Cycle 1's conceptual moves; [observations.md](observations.md) for commit-pinned empirical findings; [basins.md](basins.md) for the basin catalog. Updated when a step closes or its scope changes.*
 
-*Status: 2026-05-05. Cycle 1 mid-flight. Selection-bias probe at L_arch closed (catalog v0.3, fp32); persistence layer merged (`6245a01`); project default now fp16. Basin detection v2 is the singular substantive in-flight design direction. One sequential branch stands between current state and the next data run.*
+*Status: 2026-05-07. **The basin-v2 step below is superseded** — its empirical pre-design produced the depth-collapse finding (entropy at depth is universal under T=0, not basin-class-specific) which retired the entropy-floor detector design and triggered the re-founding-cycle event recorded in [`realignment.md`](realignment.md) and [`findings.md`](findings.md). Forward sequence now lives in findings.md research moves N1–N5; this ROADMAP is held until N1 lands and a coherent rewrite becomes possible. The "Current position" and "basin-v2" sections below are kept as historical context, not as the operative plan.*
 
 ---
 

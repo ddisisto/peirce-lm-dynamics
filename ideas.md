@@ -130,4 +130,39 @@ Several pieces of this can move forward immediately within current capabilities 
 
 ---
 
+## 2026-05-06 — v2-only re-extension of the broad-shallow ensemble
+
+A natural follow-on once v2 detection is implemented: re-run the top-100 from `[BOS]` under the v2 predicate *alone* (no v1 cycle-capture), to L_arch=2048. The v2 calibration probe (commit `195e5c4`, observation entry above) raised two questions that the current persistence captures cannot answer because v1 stopped early:
+
+- **Do v1-captured trajectories continue to satisfy v2 if extended past capture?** Some cycle-captured basins (the "I had been up" prose cycle, the "_first_ thing to note" phrase basin) have late-window H_mean > 2 — well above the v2 threshold of ~0.1. If extended, do they stay loose, or does the cycle tighten into v2's regime as it locks in further? The persisted steps end at the K=4 confirmation point; we have no data on what comes after.
+- **Do the very-short v1 captures (length ≤ 17, H_mean > 4) actually settle, or did v1 fire prematurely?** Whitespace pipe-fences captured at length 4–17 in broad-shallow have so little tail that the K=4 cycle confirmation is the only signal there is. Extending these without v1 to see whether they tighten into a stable basin (cyclic or v2-detectable) or escape into other content adjudicates whether v1 is over-firing on these short cases.
+
+### Why the two questions matter together
+
+They're the same shape from opposite ends. Both ask: *what does v1 hide by stopping early?* One end is the long prose cycles where the cycle is real but loose; the other is the short structural cycles where the cycle is tight but the trajectory hasn't had room to commit. A single v2-only run resolves both.
+
+### Run shape
+
+- Predicate stack: `[eos, basin_capture_v2(threshold ~0.1, window 256), window_cap(L_arch=2048)]`. No v1 cycle-capture.
+- Same model, same initial conditions, same hard-cap T=0 inference as the existing selection-bias run.
+- Trajectory rows cache-hit on `data/peirce.db`; the engine prefills from existing materialized steps and continues stepping under the new predicate. Only the trajectories whose v1 capture was earlier than their natural v2 fate need additional inference.
+- The observation rows are fresh (new predicate set ⇒ different observation_id), so this populates the store as a parallel observation set rather than overwriting v1.
+
+### What it produces
+
+- **Joint-capture map.** For each of the 100 trajectories, v1 capture point (existing) vs v2 capture point (new) vs window_cap (neither). Three-way: v1∧v2 (both fire, basin is jointly detected), v1∧¬v2 (loose cycle, v2 misses), ¬v1∧v2 (the 37 plus possibly the short v1-fire trajectories, v1 misses), ¬v1∧¬v2 (true transient at L_arch under both detectors).
+- **Late-window stats at v2-defined truncation** for the v1∧v2 and ¬v1∧v2 trajectories — the asymptote v1 was hiding. Catalog gets a clean entropy-floor signature that is comparable across cyclic and non-cyclic basins.
+- **Adjudication of the short-capture question.** If the length-4–17 v1 captures don't fire v2 within L_arch (or fire much later), v1 was over-firing on them at K=4. If they fire v2 immediately past their v1-capture point, v1's K=4 was right. Either result tightens the v1 confirmation threshold's calibration.
+
+### Connection to other threads
+
+- **Transients as the territory of useful generation** (entry above): v2 makes the basin / non-basin boundary sharp enough to use as the territory boundary in a research sense. The joint-capture map is a cleaner cartographic surface than v1 alone.
+- **Local-success traps** (in the EOS entry): the joint-capture map directly distinguishes the two basin classes — cycle-captured basins are the "rich-relational-structure" candidates (crystals, in the foundations vocabulary), v2-only-captured basins are the "local-success-trap" candidates. Perturbation response under T>0 (a future cycle's probe) can then test the foundations-level hypothesis that crystals resist small perturbations and traps escape readily.
+
+### Readiness
+
+Runnable as soon as the v2 predicate lands on this branch. It's the natural next data run after the v2 detector implementation, and the catalog-as-query-over-store iteration named in ROADMAP step 3 can use the joint-capture map as its first-class data structure.
+
+---
+
 *This document is downstream of the [Foundations](foundation.md) and adjacent to the design requirements suite. Threads here are pre-commitment; entries should be as careful in capturing reasoning as design surfaces are in capturing requirements, because the reasoning is what makes the thread re-enterable later.*

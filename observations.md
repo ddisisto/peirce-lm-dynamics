@@ -308,3 +308,148 @@ Distinct basins across the selection-bias ensemble: ~54 (estimate from PR body; 
 
 - **The catalog as currently maintained is a hand-curated markdown artifact pinned to a specific run.** Re-deriving it across a stack-identity change is manual work disproportionate to the value at this stage. A future iteration will likely re-invent the catalog as a query over the persisted store rather than a hand-curated document, at which point dtype changes are no-cost.
 - **The persistence layer's content-addressed identity scheme (stack + initial_ids + injections for trajectories; trajectory_id + predicates + inference_strategy for observations) makes the dtype boundary clean automatically.** No special handling needed — fp32 trajectory rows would coexist with fp16 ones in the same DB if both were generated, distinguishable by their stack hash. The store layer already carries the discipline that the catalog format does not yet have.
+
+---
+
+## 2026-05-06 — basin-v2 calibration probe; populations are inverted from the v1-detector intuition
+
+**Commit:** `195e5c4` (basin-v2 branch; pre-design probe per ROADMAP).
+**Run:** `uv run python scripts/v2_calibration_probe.py`
+**Config:** read-only over `data/peirce.db` — the 100 fp16 selection-bias observations (predicate set `eos + basin_capture(K=4, max_period=32, cycle_window=256) + window_cap`, inference `hard_cap_t0`). For each trajectory, last-N feature panels over windows 32 / 64 / 128 / 256 / 512: mean and extreme (min for entropy / alt_prob, max for logit_gap / log_prob) per feature.
+
+### Headline
+
+The 37 `window_cap` trajectories — the v2 candidate-positive population — are *more* deterministic per-step than the 63 v1-captured trajectories, not less. Population separation is essentially complete on every (feature, window) cell; window size barely matters, which means the determinism is sustained, not a fragile artifact of any particular tail length.
+
+### Population summary at window=256 (min / median / max)
+
+| feature   | aggregator | candidate-basin (n=63) | window_cap (n=37)        |
+|-----------|------------|------------------------|--------------------------|
+| entropy   | mean       | 0.229 / 1.46 / 4.87    | 0.006 / 0.019 / 0.085    |
+| logit_gap | mean       | 0.87 / 3.18 / 6.80     | 7.68 / 9.92 / 16.28      |
+| alt_prob  | mean       | 0.020 / 0.065 / 0.165  | 0.000 / 0.001 / 0.011    |
+| log_prob  | mean       | -2.68 / -0.88 / -0.06  | -0.021 / -0.003 / -0.001 |
+
+Min over each window saturates at zero in both populations (entropy / alt_prob both bottom out trivially), so mean is the load-bearing aggregator for v2 thresholding. Logit_gap mean has the cleanest cushion — ~0.9-unit gap between the candidate-basin max (6.80) and the window_cap min (7.68) at window=256, with both populations preserving the cushion across all five window sizes tested.
+
+### Mechanism, as `2026-05-01 EOS as implicit-success signal` foretold
+
+The 37 transients aren't basin-adjacent under-pressure cases. They are clean local-success traps: at each step there's essentially one obvious continuation (entropy ~ 0, gap > 7), but the obvious continuations chain into ascending sequences and structural drift rather than fixed-token cycles. Eyeballing tails surfaces recurring shapes:
+
+- **Numerical / temporal enumeration**: `**284. ** **285. **`, `(656) (657) (658)`, RFC5297→RFC5298, eightieth-day → nineth-day → tenth-day, `*AKT113* *AKT114*`.
+- **Identifier-suffix concatenation** (most striking shape): `eval_with_mask_and_softmax_and_logits_and_softmax_and_logits.py`, `user_avatar_url_https_http_https_https'`, `var_name = var_name; return var_name;`.
+- **Indexed figure / record drift**: `materials-12-01902-f064`, `ijerph-17-04281-g067` with running figure indices.
+- **Boilerplate sentence with item drift**: chemical-detergent enumeration, brigade-assignment chain, alcohol-policy boilerplate.
+- **Translation msgid/msgstr drift**: same Empire-in-danger string under incrementing bar01 → bar02 metadata.
+- **Code structures with form drift**: helm yaml templates, Jupyter cell JSON, pub-fn-new self-call chain.
+
+The v1 cycle-period detector is structurally blind to all of these by construction — the *content* never strictly repeats — but the entropy / gap floor is more extreme than for the cycle-captured population. v2-as-entropy-floor catches them.
+
+### Implications for ROADMAP's open design questions
+
+- **Detector signal: a single statistic suffices.** Entropy mean over a 256-window with threshold ~0.1 separates the populations cleanly. Logit_gap mean (threshold ~7) and log_prob mean (threshold ~-0.04) work equivalently. Multi-feature classifiers are not needed at this stage — the data is more separable than the design surface anticipated.
+- **Basin identity for non-cyclical basins: flag-only-with-stats is the right first move.** The shapes inside the 37 are too varied to fingerprint with a tail-content tuple (the tails drift token-by-token), and template-pattern extraction is its own research problem. v2 captures the trajectory + late-window stats + a `basin_kind: noncyclical_local_success` flag. The cycle catalog stays cycle-only on basin identity; v2 adds an annotation channel rather than an alternative identity scheme.
+- **Runtime cutoff vs post-hoc: runtime termination is safe from the first run.** ROADMAP's caution (probe-only first) was the right default before seeing the data. The actual data makes the false-positive rate at threshold ~0.1 essentially zero, given the v1-captured population's H_mean floor at 0.229.
+- **Separator-vs-basin within enumerations**: the data doesn't directly resolve this, but it suggests the question may not matter for v2's predicate logic — both separators and incrementing tokens are highly determined; per-trajectory entropy averages over both. Inside-structure analysis is post-hoc, not predicate.
+
+### Comparison-frame caveat
+
+Captured trajectories were terminated by the v1 predicate (lengths 4–575) and so their "late-window" reflects *up to capture*, not stable-in-basin asymptote — the v1 predicate hides what comes after. The shortest captures (lengths 4–17, H_mean 4–4.5) are at the opposite extreme from the 37: very-early broad-shallow whitespace / table-fence captures where there's no room for the late window to settle. They're noisy in this comparison frame but irrelevant to the v2 threshold question because they're trivially-cyclical. Substantive captures (length ≥ ~50) span the entropy range 0.23–2.96, well separated from the 37 transients.
+
+The natural next move is implied by the caveat — see [ideas.md](ideas.md) "v2-only re-extension of the broad-shallow ensemble" entry.
+
+### Adjudicated
+
+- **Single-statistic v2 is sufficient on this calibration.** Multi-feature framing is overkill for the separation observed.
+- **Runtime-mode v2 is safe from the first run** under threshold ~0.1 entropy mean over a 256-window. Probe-only intermediate is unnecessary.
+- **The 37 are not late-cycle-adoption candidates.** They are a structurally distinct regime from the v1-cyclic basins; v2 catches them via a *different signature* (per-step certainty without content-level period), not via a more sensitive version of the same signature.
+
+### Suggestive but not yet adjudicated
+
+- Whether v1-captured trajectories continue to satisfy the v2 entropy criterion past their capture point, or whether some cycle-captured basins are looser-entropy than the v2 threshold and would not be jointly captured. The candidate-basin H_mean range (0.23 to 4.87) suggests at least the high-entropy end (the prose cycles, "I had been up", "first thing to note") would *not* fire v2 at threshold 0.1. v2 and v1 may detect overlapping but distinct basin populations rather than v2 strictly subsuming v1.
+- Whether the short broad-shallow captures (length ≤ 17, H_mean > 4) actually settle if extended past v1 capture into a v2-detectable regime, or whether they remain in their loose late-window stats. v1's K=4 confirmation may be firing prematurely on these.
+- Both questions resolve under the v2-only re-extension run named in [ideas.md](ideas.md).
+
+---
+
+## 2026-05-07 — depth-collapse confirmed: entropy floor is universal, not basin-class-specific
+
+**Commit:** `1e5710e` (basin-v2; full-depth extension landed at `fa10933`, probe updated at `1e5710e`).
+**Run:** `uv run python scripts/full_depth_extension.py && uv run python scripts/v2_calibration_probe.py`
+**Config:** `data/peirce.db` now holds 100 trajectories × 2047 materialized steps each. The extension run wrote 100 fresh `window_cap` observations under predicates `[eos, window_cap(L_arch=2048)]` only — no v1 cycle-capture. The calibration probe was updated (same commit) to read `obs.trajectory.steps` (the full materialized trajectory) rather than `obs.steps` (truncated to `observed_length`); the original selection-bias terminal_event labels are kept for population definition.
+
+This entry corrects the framing in the prior 2026-05-06 entry. The headline of that entry — "the 37 are *more* deterministic per-step than v1-captured ones" — was a true statement about the truncated late-windows it measured but a misleading framing of the underlying phenomenon. With full-depth data the picture inverts.
+
+### Headline
+
+**Daniel's depth-collapse hypothesis is confirmed in the strong form.** Per-step entropy is a *depth* phenomenon, not a basin phenomenon. By position bucket `[1024, 2048)` the candidate-basin and window_cap populations are statistically indistinguishable on entropy mean, with all 100 trajectories below ~0.13 and 96/100 below 0.1.
+
+### Population convergence by position bucket (entropy mean, median across trajectories)
+
+| bucket           | candidate-basin (n=63) | window_cap (n=37) |
+|------------------|------------------------|--------------------|
+| `[0, 64)`        | 1.86                   | 2.08               |
+| `[64, 256)`      | 0.19                   | 0.49               |
+| `[256, 1024)`    | 0.027                  | 0.069              |
+| `[1024, 2048)`   | **0.010**              | **0.022**          |
+
+Maxima at the deepest bucket: candidate-basin 0.134, window_cap 0.096 — overlap. Logit_gap mean medians at `[1024, 2048)`: 9.35 vs 9.79, also overlapping. The clean separation reported in the prior calibration entry was an artifact of comparing v1-captured trajectories at *capture-point depth* (lengths 4–575, where they hadn't reached the floor yet) against window_cap trajectories at L_arch.
+
+### Onset is uniform across populations
+
+Per-trajectory position at which entropy first stays below 0.1 for 8 consecutive steps:
+
+| population         | n  | min | p25 | p50 | p75 | max | never_below |
+|--------------------|----|----:|----:|----:|----:|----:|------------:|
+| candidate-basin    | 59 | 28  | 109 | 174 | 232 | 616 | 4           |
+| window_cap         | 37 | 25  | 76  | 143 | 298 | 612 | 0           |
+
+Distributions overlap. Window-cap trajectories settle slightly faster on the median (143 vs 174) but the IQRs and ranges are essentially the same. No trajectory ever crosses below threshold past 616 — the deterministic floor is reached well within `[256, 1024)` for all trajectories that reach it at all.
+
+### The 4 "never-below" candidate-basins reveal a cycle-period signature
+
+The four candidate-basin trajectories that never have 8 consecutive sub-0.1 steps are not the loose prose-cycle entries. They are trajectories whose cycle period structure shows up in the entropy time-series — *within-cycle* entropy oscillates because some cycle positions are deterministic and some are not, so the smoothing requirement is never satisfied:
+
+- `ada5657f` — basin-006 (`%22%22+` URL fragment, period 5). Bucket-mean entropy at `[1024, 2048)` is 0.028, below threshold; but within-cycle one or two positions have local entropy spikes large enough to prevent an 8-step sub-0.1 run.
+- `b9eeb9e9`, `e3da051e` — hash-fill cycles with `\n\n#` periodicity inside.
+- `ba1fa91a` — length-4 capture, all-whitespace tail; the only one of the four whose bucket-mean (0.134) is also above threshold.
+
+This is itself a useful signal: cycle period detected via the *entropy time-series* rather than the token sequence. Worth noting for the v2 design space — the cycle detector doesn't have to operate on token-id tuples to find period structure.
+
+### Post-capture behavior is varied — the catalog mixes asymptotes with transients
+
+Reading the full-depth tails for v1-captured trajectories surfaces three regimes:
+
+- **Phrase cycles persist and consolidate.** `acb1a7ab` (basin-020 Chromium) had H_mean=2.055 at v1 capture (length 221) and H=0.005 at `[1024, 2048)`. `fe999045` (basin-022 "I had been up") goes from H=2.633 at length 91 to H=0.010 at depth. The cycle was real at capture; it tightened further with depth. These are asymptotic basins.
+- **Some short-period captures morph into recursive concatenation.** `6917c95f` was cataloged as basin-023 (`_v6` period 3) at length 302. At full depth its tail reads `ip6_tables_v6_ext_v6_v6_v6_v6_v6_v6_v6_v6_v6.h>` — the `_v6` period broke and the trajectory escaped into recursive identifier concatenation. `58ca117f` (a `vlan6` family capture) shows the same pattern: `vlan6_vlan6_vlan6_vlan6_vlan.h>`. `62498529` shows `_name_name_name_name…` recursive expansion. The v1 cycle was a *transitional* moment, not the asymptote.
+- **Very-short captures (length 4–17) mostly do settle**, but into varied shapes — some into the v1-captured cycle (table fences, code fences), some into different attractors. Worth case-by-case re-validation.
+
+So the basin catalog as currently maintained mixes asymptotic basins with transitional moments. v1 is correctly a "cycle moment detector" but mis-named when the captured cycles aren't asymptotic. The catalog v0.3 entries that turn out to be transitional deserve a different annotation.
+
+### Reframing v2
+
+The entropy-floor / logit-gap-floor framing in ROADMAP and the prior calibration entry no longer tracks any meaningful basin distinction. The depth-collapse means:
+
+- **Entropy as a v2 detector signal is the wrong axis.** Every trajectory at depth has near-zero entropy. A threshold-based predicate fires on essentially all of them at sufficient depth — it's a depth-detector, not a basin-detector.
+- **The interesting v2 question is *content shape at depth*, not *whether* the model commits.** All trajectories commit. What they commit to varies — token-level cycle, ascending sequence, recursive concatenation, drift with template invariants — and these shapes are likely the cleaner cataloging axis than presence/absence of period.
+- **v1 catches one content shape (token-level period); v2 should catch the others.** Re-cast: v2 detects ascending / drift / concat shapes that v1 is structurally blind to. The detector for those probably operates over *position-content invariants* (template structure, suffix-extension patterns) rather than over the entropy distribution.
+- **Runtime predicate value drops sharply.** Inference savings from runtime termination are gone if v2 needs depth ≥ ~1024 to characterize the asymptote. v2 may live mostly as post-hoc analysis over fully-extended trajectories — exactly the substrate the full-depth extension produces.
+
+### Adjudicated
+
+- **Per-step entropy collapse is a depth phenomenon, not a basin phenomenon.** All 100 trajectories converge to a tight entropy floor by `[1024, 2048)` regardless of v1-detected basin status. The 37 "transients" aren't transient — they are at the same deterministic floor as everyone else.
+- **The 2026-05-06 calibration entry's headline finding is a truncation artifact.** The single-statistic v2 detector it suggested would not work — entropy doesn't separate basin classes once both populations are observed at full depth.
+- **Some v1-captured "basins" are transitional, not asymptotic.** The `_v6`, `vlan6_`, `_name` family in particular escape their captured cycles into recursive concatenation. The catalog needs re-validation against post-capture asymptotes; the cycle-token-id identity remains valid, but the basin-as-asymptote claim does not for these entries.
+- **Cycle period detectable in entropy time-series.** The 4 never-below candidates reveal that entropy oscillation within a cycle is a separate, period-revealing signal independent of token-id matching.
+
+### Suggestive but not yet adjudicated
+
+- **What the right v2 detector shape is.** Content-shape classifier at depth (cycle / ascend / concat / drift) is the working candidate; whether a clean operational definition exists for each shape, and whether the shapes are mutually exclusive or overlapping, is a research question this finding makes urgent.
+- **Whether the "transitional v1 capture" pattern is general** or specific to the short-period structural family. The phrase-cycle captures (Chromium, "first thing", etc.) all persisted and tightened. Among the short structural captures, some persisted (e.g. PubMed URL repeat) and some escaped (`_v6`, `vlan6_`). Whether the difference correlates with cycle period, content domain, or some other feature is open.
+- **Whether content-shape regimes are predictable from early-window features.** If we can classify shape from `[64, 256)` features, we recover most of the runtime-predicate value. If we can't, v2 is necessarily post-hoc.
+
+### Methodological
+
+- **The persistence layer + content-addressed identity made this finding cheap to obtain.** Once full_depth_extension.py landed, all subsequent analysis is read-only over the store with no further inference. The probe edit (one line: `obs.steps` → `obs.trajectory.steps`) was the only code change needed to surface the corrected picture. The trajectory-vs-observation split in `peirce.records` is doing exactly what it was designed to do — multiple observation rows sharing trajectory_steps, the longer one extending the shorter without re-running.
+- **The 2026-05-06 calibration entry's discipline of pinning to a commit means it remains true and reproducible against `195e5c4`'s data view.** The reproduction protocol surfaces exactly what the entry reported. The interpretation correction is what landed in this entry, not a rewrite of the prior entry. Append-only working as designed.
+- **The full-depth extension is now the canonical lens for v2 calibration.** Future v2 work operates over `data/peirce.db` post-extension as a fixed substrate; iterating on detector shape doesn't require re-running inference.

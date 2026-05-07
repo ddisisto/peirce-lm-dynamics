@@ -2,7 +2,7 @@
 
 *Shapes the context loaded into every Claude session at this path. README.md is the human-facing entry point; this file is for Claude's working context. `MEMORY.md` (auto-loaded) is the per-topic memory index.*
 
-*Last reviewed: `6245a01` / 2026-05-05. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
+*Last reviewed: `39d8d6a` / 2026-05-07. If HEAD has moved since the stamp, skim the diff before assuming the picture encoded here is current.*
 
 ## Always loaded
 
@@ -11,8 +11,11 @@
 @ROADMAP.md
 
 Other project docs are read by reference, not @-included:
-- `brief.md`, `design-reqs.md`, `design-reqs-records.md`, `design-reqs-steering.md` — subject to drift; held out of the auto-loaded set until the design-reqs refactor (per ROADMAP) settles them.
-- `observations.md`, `basins.md`, `ideas.md` — grow over time; loaded on demand when relevant to the work.
+- `findings.md` — 2026-05-07 consolidated working report (three-regime taxonomy at depth; slot-readout reframing of the crystal hypothesis; project / terminology / execution implications; research moves N1–N5). Held as a single working file pending content redistribution across foundation / basins / ROADMAP / etc., once N1 (phase-aware chosen-token analysis) lands.
+- `realignment.md` — re-founding-cycle document recording the depth-collapse finding's frame-level question. Companion to findings.md.
+- `brief.md`, `design-reqs.md`, `design-reqs-records.md`, `design-reqs-steering.md` — held historical; their retire/recast is downstream of the re-founding decision findings.md names.
+- `observations.md`, `basins.md`, `ideas.md` — grow over time; loaded on demand when relevant to the work. `basins.md` v0.3 is held historical; v0.4 schema awaits N1.
+- `ROADMAP.md` — its "basin-v2" step has been superseded by the findings.md research moves; rewrite pending N1.
 
 ## Working model
 

@@ -69,12 +69,14 @@ The forward sequence of Cycle-2 moves is carried inline in `CLAUDE.md` rather th
 
 ## Open: regime vocabulary
 
-Cycle 1 surfaced a provisional three-regime split among attractor types observable at depth (recorded in `archive/cycle-1-findings.md`). That vocabulary is *deliberately not lifted forward as canon* under v0.2, pending two preconditions:
+Cycle 1 surfaced a provisional three-regime split among attractor types observable at depth (recorded in `archive/cycle-1-findings.md`). Of that split, the **slot / scaffolding / slot-readout / class-enumeration-attractor** vocabulary is retained going forward — supported by the literature survey at [`lit-review.md`](lit-review.md), which identifies this neighbourhood as project-distinctive (no surveyed work partitions degenerate regimes by within-cycle template structure or treats high-H phase-position alt distributions as recoverable class priors).
+
+The Cycle-1 sub-regime names *pinned cycle* (R1) and *mode-locked structural attractor* (R2) are deliberately not lifted forward, pending two preconditions:
 
 1. **Mechanical re-derivation.** The C2 phase-aware chosen-token analysis (forward-sequence move 1 in `CLAUDE.md`) produces per-attractor regime tags from the substrate's own shape signals — chosen-token entropy across recurrences at each phase position. The output of that analysis is what re-enters the working vocabulary as canon, not the by-eye provisional partition.
-2. **Literature positioning.** A literature survey targeting the decoding-degeneration line (Holtzman 2019 onward), nucleus / typical-decoding evolution, mech-interp induction-head work, and dynamical-systems framings of LMs is owed before regime terminology locks in. Initial re-reading suggests more overlap with the nucleus-sampling framing than the cycle-1 findings doc had previously assumed; whether this echoes back through project terminology is open.
+2. **Renaming consideration.** The literature survey notes that these sub-regimes are sub-cases of greedy-decoding fixed-point / short-cycle behaviour already known in the Markov-chain literature (Geng et al. 2603.11228, Zekri et al. 2410.02724); the names that survive into canon should reference the within-cycle distinction property directly (e.g. *single-mode cycle* / *single-mode template cycle*) rather than coining genre-labels that imply Peirce introduced the cycle phenomenon.
 
-When both preconditions are met, regime vocabulary lands in observations.md (per-attractor entries) or a successor `basins.md` (catalog form), with this document updated to point at the canonical naming.
+When both preconditions are met, regime vocabulary lands in `observations.md` (per-attractor entries) or a successor `basins.md` (catalog form), with this document updated to point at the canonical naming.
 
 ## Foundations supremacy
 

@@ -8,6 +8,7 @@
 
 @README.md
 @foundation.md
+@design-reqs.md
 
 ## Cycle 2 — forward sequence
 
@@ -30,7 +31,6 @@ This section rewrites here when a move closes or scope shifts. New parked thread
 ## Other project docs
 
 Read by reference, not @-included:
-- `design-reqs.md` — current substrate stated as given (model, persistence, predicate set, identity scheme, shape primitives, descriptive script set).
 - `observations.md` — append-only commit-pinned empirical findings; loaded on demand when relevant to the work.
 - `ideas.md` — append-only forward-looking threads. Appears at root when the current cycle has one; otherwise look in archive for prior-cycle threads if a revival becomes relevant. Restate in current-cycle voice rather than carrying forward retired vocabulary.
 - `archive/` — prior-cycle record. Holds foundation v0.1, prior-cycle findings / brief / design-reqs / basins / ROADMAP / observations / ideas, plus `archive/deprecated-terms.md` (vocabulary explicitly retired in the v0.2 re-founding). Reproducibility for the prior cycle is via git tag `v0.1-final`.

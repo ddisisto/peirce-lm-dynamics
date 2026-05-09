@@ -183,4 +183,28 @@ This is plausibly the cleanest project-distinctive position. The frame ("treat c
 
 ---
 
+## Addendum (2026-05-09) — multi-trajectory inference axis
+
+The original survey was scoped to per-trajectory degenerate-regime analysis. The beam-search / multi-trajectory-inference corner sat outside that scope and is added here for completeness, prompted by re-reading two papers:
+
+- **Vijayakumar et al. 2018, "Diverse Beam Search"** (arXiv:1610.02424). Partitions the beam into groups and adds a diversity-augmented objective across groups, producing diverse top-K rather than nearly-identical top-K. Designed for tasks with one underlying answer-shaped target and multiple plausible surface realisations (translation, image captioning, VQG).
+
+- **Kool et al. 2019, "Stochastic Beams and Where to Find Them: The Gumbel-Top-k Trick"** (arXiv:1903.06059, ICML 2019). Extends the Gumbel-Max trick to factorised sequence distributions, giving exact sampling-without-replacement via Stochastic Beam Search. Creates a theoretical continuum between deterministic beam search (the no-error limit) and stochastic sampling (the high-error limit), with Gumbel perturbation as the parameterising mechanism. Introduces low-variance estimators for expected sentence-level BLEU and *model entropy* (entropy of the sequence-level distribution).
+
+**Stance.** Both papers sit in the avoidance-stance family the original survey documents, but at multi-trajectory rather than per-trajectory scope. DBS engineers diversity to suppress beam-internal mode collapse; Stochastic Beam Search uses Gumbel structure to draw quality-controlled diverse samples without replacement. Same closing-the-door move as nucleus / top-p, applied at a different scope. Does not change the original survey's headline (decoding literature is avoidance-stance with no within-cycle structural analysis); extends it laterally.
+
+**Methodological connections to Cycle-2.** Three substantive points where this corner intersects the project's forward sequence:
+
+1. **A second axis of error introduction.** The replication-with-error frame currently parameterises error via per-step T (T=0 deterministic argmax → T>0 traversal of the productive band). Kool's framing supplies a second axis: deterministic beam-of-one ↔ Gumbel-perturbed beam ↔ full stochastic sampling-without-replacement, with error introduced *at branch selection* rather than *at per-step distribution shaping*. The two axes are not interchangeable; per-step T noise compounds along the trajectory while Gumbel-Top-k samples joint trajectory probability cleanly.
+
+2. **Trajectory-distribution entropy as a measurable.** The H-trace measures within-trajectory per-step distributional entropy. Kool's estimator measures the entropy of the *model's distribution over trajectories* from a given initial condition. These are different objects; the project has not previously had a clean tool for the latter. If the slot/scaffolding decomposition is right, then trajectory-distribution entropy from a class-enumeration attractor's basin should be high but combinatorially structured over the slot positions — a quantitative readout the argmax substrate alone cannot supply.
+
+3. **Direct refinement path for N2 (alternate-path continuation).** N2 as currently scoped picks alt-branches by argmax-of-non-chosen at high-H positions — a single deterministic perturbation per position. Gumbel-Top-k branching extends this to K branches sampled-without-replacement proportional to model probability. The KV-cache + `Injection` machinery already supports the multi-branch case; the change is in branch-selection rule only. The simple case is the right starting point (cheaper, single-result); the Gumbel extension is the principled refinement once first signal is in.
+
+**Stance against the project's central novel claim.** The central novel claim is the within-trajectory shape-level partition (slot / scaffolding / slot-readout / class-enumeration attractor). Beam-search literature does not engage with this partition because beam search is a multi-trajectory operation that obscures within-trajectory phase structure by construction — beams are scored at the sequence level, not partitioned by phase position within a sequence. The two corners are methodologically adjacent but ask different questions; the project's claim is not in conflict with either paper and both can supply tools without displacing the central frame.
+
+**Action items extracted.** The N2 description in `CLAUDE.md` notes the Gumbel-Top-k refinement path. N5 (cycle-aware sampling) may want to be re-described in Kool-flavour terms when its turn comes ("stochastic-branch at high-H slot positions, argmax elsewhere") — operationally cleaner than per-step T modulation and connecting to a published methodology. No changes to N1 (read-only over existing argmax substrate; beam machinery not relevant). No archive of this addendum: it joins the main lit-review's frozen reading.
+
+---
+
 *Verification status. Papers fetched directly: Holtzman 2019 (search-result level only, abstract verified), Wu 2502.15208 (HTML fetched, setup and metrics verified), Geng 2603.11228 (HTML fetched, framing and greedy-decoding claim verified), Xu 2206.02369 / DITTO (search-result fetched, self-reinforcement claim verified), Marongiu 2504.01100 (HTML fetched, two-mechanism claim verified). Papers cited from search-result snippets only: Welleck 2020, Su 2022, Meister 2023, Basu 2021, Chuang 2023, Li 2310.10226, Finlayson 2310.01693, Zekri 2410.02724, Yan 2504.14218, Olsson 2022, Singh 2404.07129, Tigges 2407.10827. The latter set should be considered "verified by snippet" rather than "verified by full read"; specific quotation-level claims would want a fuller fetch before citation.*

@@ -2,7 +2,7 @@
 
 *Shapes the context loaded into every Claude session at this path. README.md is the human-facing entry point; this file is for Claude's working context. `MEMORY.md` (auto-loaded) is the per-topic memory index.*
 
-*Last reviewed: `cade4b9` / 2026-05-08, immediately prior to the Cycle-2 commencement commit that lands this file. If HEAD has moved past the commit landing this file, skim the diff before assuming the picture encoded here is current.*
+*Last reviewed: `6b0b331` / 2026-05-09, post Cycle-2 cleanup pass (basins.py + C1 production-run scripts retired to `v0.1-final` tag, lit-review.md landed, design-reqs.md @-included). If HEAD has moved past this commit, skim the diff before assuming the picture encoded here is current.*
 
 ## Always loaded
 

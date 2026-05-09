@@ -1,17 +1,21 @@
-# scripts/ — runs and smoke tests
+# scripts/ — runs, renderers, smoke tests
 
-Drivers over the `peirce/` library. Two kinds:
+Drivers over the `peirce/` library. Three kinds:
 
-- **runs** — populate the long-lived store at `data/peirce.db` and produce stdout reports
+- **substrate-building runs** — populate the long-lived store at `data/peirce.db`
+- **read-only renderers** — read the store, no model load, no inference; produce figures and stdout reports
 - **smoke tests** — fast end-to-end checks of library invariants
 
 All runs use `peirce.runner.observe(...)` rather than calling the engine directly. Re-running is idempotent: cached observations short-circuit, partial trajectories are extended in place via KV-cache prefill rather than regenerated.
 
-## Runs
+## Substrate-building runs
 
-- `broad_shallow.py` — top-K from BOS × budget=64, hard-cap T=0, one Injection per branch at position 0. Fresh on first run; cache-hits on re-run. `BROAD_SHALLOW_TOP_K` env var overrides K (default 100). Predicates: eos, basin_capture (max_period=16, cycle_window=64), budget_cap, window_cap.
-- `selection_bias.py` — extends broad_shallow's 100 trajectories to L_arch=2048 under a wider basin probe (max_period=32, cycle_window=256, no budget_cap). Trajectory rows cache-hit; observations are fresh because the predicate set differs. Engine prefills from broad_shallow's 64 steps and continues. `SELECTION_BIAS_TOP_K` env var overrides K. Per-trajectory wall time printed inline.
-- `representative_deep.py` — read-only renderer over the store. No model load, no inference. Selects six BOS-top-K branches by chosen_id (rank-stable; created_at is second-precision and not stable as an ordering key) and prints their L_arch observation: terminal event, length, basin signature when captured, head/tail entropy and log-prob windows.
+- `full_depth_extension.py` — top-K from BOS × L_arch=2047 under predicates `[eos, window_cap]`, hard-cap T=0, one `Injection` per branch at position 0. From an empty store: builds the substrate from scratch. From a populated store (e.g. after C1's retired `broad_shallow` + `selection_bias` runs produced shallower observations of the same trajectories): cache-hits trajectory rows and prefills only the steps past their existing materialised depth. `FULL_DEPTH_TOP_K` env var overrides K (default 100). Forward-targeted for rename + docstring rewrite once the C2 substrate-construction story is locked; current docstring carries C1-historical motivation as record.
+
+## Read-only renderers
+
+- `plot_trajectories.py` — matplotlib renderings under `data/plots/`: `trajectories_aggregate.png`, `trajectories_shape.png`, `trajectories_outliers.png`, `trajectories_grid.png`. Per-trajectory shape metrics (`onset`, `floor_H`, `floor_gap`, `osc_amp`, `period`, `gap_over_H`) computed from the deep window `[1024, end)`. Filters observations to the C1 selection-bias predicate-set by string match against stored predicate-spec JSON; no live `basin_capture` code dependency.
+- `high_h_readout.py` — top-N highest-entropy positions per trajectory in the deep window, with chosen / alt / context tokens. The descriptive half of the slot-readout operation. Same string-match filter as `plot_trajectories.py`.
 
 ## Smoke tests
 
@@ -27,6 +31,11 @@ uv run python scripts/<name>.py
 
 All store paths default to `<repo>/data/peirce.db` via `peirce.runner.default_store_path()`. Override with `PEIRCE_STORE=/path/to/other.db`.
 
-## Selection criteria caveat
+## Retired (preserved at git tag `v0.1-final`)
 
-`representative_deep.py` selects by chosen_id, not by rank. Reason: `trajectories.created_at` is second-precision in SQLite, and broad_shallow inserts ~3 trajectories per second, so insertion-order ranks tie-break unstably. Future scripts that want a "rank N from BOS" reference either (a) load the model briefly and recompute top-K from the BOS distribution, or (b) hardcode chosen_ids derived from the tokenizer.
+The following C1-vintage scripts were retired in the cycle-2 cleanup pass and are recoverable from the `v0.1-final` tag:
+
+- `broad_shallow.py` — top-K BOS × budget=64; the C1 substrate-builder under `[eos, basin_capture(K=4, max_period=16, cycle_window=64), budget_cap, window_cap]`.
+- `selection_bias.py` — extended `broad_shallow`'s 100 trajectories to L_arch=2048 under a wider basin probe `[eos, basin_capture(K=4, max_period=32, cycle_window=256), window_cap]`.
+- `representative_deep.py` — read-only renderer selecting six BOS-top-K branches and printing their L_arch observations with structural-cycle signatures via the retired `detect_tail_cycle`.
+- `v2_calibration_probe.py` — basin-v2-line calibration probe, retired alongside the basin-v2 design direction.

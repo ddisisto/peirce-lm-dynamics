@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 69bbf6c / 2026-05-05)*
+@README.md *(updated 2026-05-09 — cycle-2 cleanup pass; basins.py retired)*
 
 ## Standards within this path
 

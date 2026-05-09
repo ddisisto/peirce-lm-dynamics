@@ -7,9 +7,8 @@ length. The first predicate to return a non-None tag terminates the
 trajectory; the tag becomes the trajectory's terminal_event.
 
 Predicates that need only token-ids (eos, budget_cap, window_cap) ignore
-the records argument. Predicates that need probability dynamics (e.g.
-basin_capture_predicate, defined alongside detect_tail_cycle in basins.py)
-read records.
+the records argument. Predicates that need probability dynamics read
+records.
 
 Each factory attaches `name` and `params` attributes to the returned
 callable, so generate_trajectory can introspect the predicate set into a

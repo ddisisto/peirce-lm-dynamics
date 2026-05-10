@@ -122,3 +122,48 @@ The catalog's principled candidate list (lowest gap_over_H positions in the deep
 - **`0a4614cd` chosen-token-period vs H-trace-period divergence.** The catalog reports both signals honestly but the catalog doesn't currently *name* the divergence. If more such specimens emerge, a named tag (e.g. `SLOTTED-ROTATION-AT-HARMONIC` or similar) may earn its keep.
 - **Regime-vocabulary canonisation (`design-reqs.md` "Open: regime vocabulary").** Precondition 1 (mechanical re-derivation from shape signals) is now effectively met by the catalog. Precondition 2 (renaming consideration vs Markov-chain prior art — Geng 2603.11228, Zekri 2410.02724) is the remaining work.
 
+
+## 2026-05-10 — NOPERIOD specimen audit: two-cluster substructure within the no-period bucket
+
+**Commit:** `af8d141`
+**Run:** `uv run python scripts/noperiod_audit.py`
+**Config:** read-only over `data/peirce.db`; same selection-bias filter as `shape_catalog.py`. Per NOPERIOD specimen, peaks at default + relaxed `PEAK_MIN ∈ {0.20, 0.10}`, peaks under widened `LAG_MAX = 256`, top-K normalized-acf values across the wide window with no strict-local-max filter, plus deep-window H / gap / gap_over_H quartile summaries.
+
+### Headline
+
+The 8 NOPERIOD specimens partition cleanly into two empirical clusters. Five (the new NOPERIOD additions from the N1 → N1.5 convention shift) are honest no-period: low-amplitude smooth H-traces with a monotonically declining autocorrelation and no peak at any tested threshold or lag window. Three (the original N1 first-light NOPERIOD set) carry weak quasi-periodic structure visible at relaxed `PEAK_MIN`, sitting on a bimodal H-trace — near-zero floor punctuated by isolated high-uncertainty spikes. The strict-local-max + `PEAK_MIN = 0.30` convention does the right thing on both: Cluster A is genuinely structureless and Cluster B's structure is too weak / sparse to lift into the catalog's PERIODIC bucket without bringing in false positives. The catalog's NOPERIOD tag therefore correctly groups them, and the within-NOPERIOD substructure is descriptive — surfaced here for downstream consumers (especially N2) but not currently load-bearing.
+
+### Cluster A — honest no-period (n=5)
+
+`657c3126`, `ba1fa91a`, `96540bf1`, `941fc026`, `b2c38335`. Deep H median 0.05–0.13 nats, deep gap 5–7 logits, gap_over_H median 40–120. The deep H-trace is smooth and slow-varying around its low floor; the autocorrelation declines monotonically from acf ≈ 0.99 at lag 2 to lower values at higher lags, with no strict local maximum at any tested `PEAK_MIN ∈ {0.30, 0.20, 0.10}` over `lag ≤ 256`. The high acf at small lags reflects the smoothness, not periodicity.
+
+These 5 are exactly the specimens the convention shift correctly reclassified PERIODIC → NOPERIOD: under the prior `argmax`-in-window rule they would have returned `lag_max = 128` (the highest-acf lag in a monotonically declining curve sits at the boundary), which the strict-local-max rule rejects because `ac[lag_max]` has no right neighbour to strictly exceed.
+
+### Cluster B — weak quasi-periodic structure on bimodal H (n=3)
+
+`1453d66b`, `05677c58`, `11b07bda`. Deep H median ≈ 0.001–0.002 nats but max 1.3–5.2 nats — a sharply bimodal trace: long stretches of near-zero entropy punctuated by rare high-uncertainty events. Deep gap median 9–10 logits, gap_over_H median 5500–8200 with IQR widths spanning order-of-magnitude (e.g. `1453d66b` IQR `[774, 57392]`, max `425625`). The bimodal H produces the bimodal gap_over_H — most positions are super-committed (huge gap_over_H), a few are wide-open (small gap_over_H, possibly < 1).
+
+Sub-threshold periodic structure is visible at relaxed `PEAK_MIN`:
+
+- `1453d66b`: peaks at `PEAK_MIN=0.10` are `[(109, 0.13)]` over `lag ≤ 128`, extending to `[(109, 0.13), (210, 0.13)]` over `lag ≤ 256`. The lag-210 peak is approximately `2 × 109` — a weak harmonic ladder consistent with a fundamental near 109. Top raw acf in the wide window: 0.13 at lag 210 / 0.13 at lag 109 / 0.10 at lag 110.
+- `05677c58`: peaks at `PEAK_MIN=0.20` are `[(20, 0.20), (29, 0.23), (115, 0.22)]`. At `PEAK_MIN=0.10` the peak list extends to a structured set including `(9, 0.17), (18, 0.19), (29, 0.23), (39, 0.14), (49, 0.12), (86, 0.16), (106, 0.13), (115, 0.22)` — a candidate fundamental near lag 9–10 with harmonics, or near 29 with `115 ≈ 4 × 29`. The strongest peak is at lag 29 (acf 0.23).
+- `11b07bda`: peaks at `PEAK_MIN=0.20` are `[(57, 0.23)]`, extending to `[(57, 0.23), (114, 0.10), (116, 0.16), (172, 0.13)]` at `PEAK_MIN=0.10`. The lags 114 / 116 / 172 cluster near `2 × 57` and `3 × 57`, suggestive of a fundamental at lag 57 with weak harmonics.
+
+The structure is too weak to clear the `PEAK_MIN = 0.30` threshold. Lowering the threshold would bring in false positives on Cluster A (whose smooth-decay acf still clears 0.10 at low lags but is not periodic), so the current convention preserves correctness at the cost of flattening Cluster B into NOPERIOD. The audit script provides the tooling to surface Cluster B's sub-structure on demand without changing the default.
+
+### Convention status
+
+`PEAK_MIN = 0.30` and `LAG_MAX = 128` are preserved. The convention shift from N1 (argmax-in-window) to N1.5 (strict-local-max) was the load-bearing change; thresholds within the new convention are now confirmed appropriate against the substrate. No catalog change. NOPERIOD remains a single tag; the within-NOPERIOD A-vs-B substructure is documented here and accessible via `noperiod_audit.py` if downstream work needs it.
+
+### Bearing on N2 candidate selection
+
+Cluster B's bimodal H profile has direct consequence for N2: the principled candidate list (lowest `gap_over_H` positions in the deep window) will preferentially pick Cluster B's spike events — the rare high-uncertainty positions where the model is briefly wide-open inside an otherwise super-committed trajectory. The N1.5 catalog already showed `1453d66b` topping the highest-H baseline at H = 4.68; the audit confirms the spikes are isolated rather than part of a periodic cycle. A clean N2 question opens up: does perturbing at a Cluster B spike redirect the surrounding super-committed trajectory, or does the structure re-converge as if the spike were memoryless? The answer is informative either way — re-convergence would be a strong signature of a stable absorbing region whose boundary the spike briefly touches; redirection would mean the spikes are leverage points the trajectory is locally sensitive to.
+
+Cluster A specimens are uninteresting under either selection rule (gap_over_H is uniformly high; H is uniformly low). They are honest absorbing regions with no within-trajectory perturbation surface; for N2 they would serve as the "boring baseline" against which Cluster B's leverage is measured.
+
+### Follow-ups
+
+- **N2 design pass.** Cluster A vs Cluster B distinction matters for candidate selection. The principled candidate list lands in Cluster B by construction; baseline picks should include both Cluster A specimens (memoryless control) and SCAFFOLD specimens (no-leverage-by-construction control).
+- **Sub-tag consideration.** If downstream work makes the within-NOPERIOD distinction load-bearing — e.g. N2 results show Cluster B and Cluster A respond differently to perturbation — a sub-tag like `NOPERIOD-SPIKE` (bimodal H with sub-threshold peaks) vs `NOPERIOD-SMOOTH` (monotonic acf decay, no structure) would earn its keep. The audit script's diagnostics are the operational definition. Not landed pre-emptively.
+- **The Cluster B / SCAFFOLD-with-soft-phases similarity.** Both have super-committed positions punctuated by lower-commitment positions. SCAFFOLD has the structure repeating at a period; Cluster B has spike events at quasi-periodic intervals too weak to register. Worth a side-by-side comparison if N2 finds them responding similarly to perturbation — they may be points along a continuum of "structured commitment with rare uncertainty" rather than separate phenomena.
+

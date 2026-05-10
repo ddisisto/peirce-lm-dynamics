@@ -36,10 +36,11 @@ Per-trajectory **shape metrics** computed over the deep window:
 - **`onset`** — first position holding entropy below 0.1 for 8 consecutive steps. A collapse-speed scalar.
 - **`floor_H`, `floor_gap`** — median entropy and median rank-1/rank-2 logit gap over the deep window. Position-along-the-(H, gap)-manifold scalars.
 - **`osc_amp`** — standard deviation of entropy over the deep window. Oscillation-amplitude scalar; the simplest quantity that distinguishes flat from cycling attractors.
-- **`period`** — dominant lag from autocorrelation of mean-subtracted deep-window entropy; `None` when variance is below noise.
+- **`peaks`** — local maxima of the normalized autocorrelation of mean-subtracted deep-window entropy in `[lag_min, lag_max]` above `peak_min`, ordered by lag. The full period-structure measurement; clean periodic signals show a harmonic ladder at multiples of the fundamental, multi-period or sub-period structure shows non-multiple lags, NOPERIOD signals return `[]`. The empty list when signal variance is below noise.
+- **`period`** — single-integer convention over `peaks` for renderers and downstream consumers that need one. Current convention: smallest divisor of the strongest peak that is itself in the peak list; falls back to the strongest peak when no in-list divisor is found. Convention resolves harmonic aliasing (clean ladders) and avoids misreading sub-periodicities (peaks at lags that don't divide the fundamental). Convention is revisable; specimens where the convention disagrees with reasonable alternatives are surfaced by inspection of `peaks`.
 - **`gap_over_H`** — `floor_gap / max(floor_H, ε)`. Commitment ratio at the floor; informative-but-tightly-coupled to the (H, gap) manifold.
 
-Specific metric definitions are revisable. The umbrella commitment — that shape (the structure of the per-step timeseries) is the primary taxonomic surface — is foundational.
+Specific metric definitions are revisable. The umbrella commitment — that shape (the structure of the per-step timeseries) is the primary taxonomic surface — is foundational. The promotion of `peaks` to a primitive and demotion of `period` to a flagged convention reflects the discipline of measurement-as-measurement: where a single-int aggregate hides structure that the underlying measurement preserves, the underlying measurement is the contract and the aggregate is the convention.
 
 The (H, gap) per-step relationship across the substrate sits on a 1-D manifold; what carries information is position along the manifold over time, not the (H, gap) coupling itself. `osc_amp` is the simplest scalar capturing motion along the manifold.
 

@@ -4,12 +4,16 @@ Read-only over `data/peirce.db`. The consolidated descriptive readout of
 the 100-trajectory substrate, partitioned by N1's slot / scaffold /
 no-period decomposition and extended along three axes:
 
-  (a) Period detection via `peirce.shape.acf_peaks`. Reports the full
-      autocorrelation peak list per trajectory; harmonic ladders show as
-      multiple entries at multiples of the fundamental, multi-period
-      structure shows as non-multiple lags, NOPERIOD signals show `[]`.
-      `dominant_period` is the first peak — fundamental period under the
-      convention.
+  (a) Period detection via `peirce.shape.acf_peaks`. The full
+      autocorrelation peak list is the underlying measurement and is
+      reported per trajectory in the `peaks=` field of every row; harmonic
+      ladders show as multiple entries at multiples of the fundamental,
+      multi-period or sub-period structure shows as non-multiple lags,
+      NOPERIOD signals show `[]`. `dominant_period` is the single-int
+      convention layer over `peaks` (smallest in-list divisor of the
+      strongest peak; falls back to the strongest peak); convention is
+      revisable, and specimens where the convention's choice looks
+      questionable can be audited by inspecting `peaks` directly.
 
   (b) Counter-vs-class slot tagging. For each slot, the chosen-token
       sequence in recurrence order is tested for arithmetic structure:
@@ -54,7 +58,7 @@ from collections import Counter
 import numpy as np
 
 from peirce.runner import default_store_path
-from peirce.shape import DEEP_START, acf_peaks, dominant_period
+from peirce.shape import DEEP_START, LAG_MAX, LAG_MIN, PEAK_MIN, acf_peaks, dominant_period
 from peirce.store import open_store, read_observation
 
 
@@ -333,10 +337,23 @@ def main() -> None:
     # ---- header ----
     print(f"shape catalog under v0.2 vocabulary — {n_total} fp16 selection-bias trajectories")
     print(f"deep window: [{DEEP_START}, end)")
-    print(f"period detection: peirce.shape.acf_peaks (local maxima ≥ {0.3} in lag ∈ [2, 128])")
-    print(f"slot threshold: chosen-token H > {SLOT_H_EPS} nats")
-    print(f"counter heuristic: int/letter consecutivity at match-fraction ≥ {COUNTER_MATCH_THRESHOLD}")
-    print(f"gap_over_H per step: gap / max(entropy, {GAP_OVER_H_EPS})")
+    print()
+    print("measurements (underlying):")
+    print(f"   acf_peaks: local maxima of normalized acf in lag ∈ [{LAG_MIN}, {LAG_MAX}], "
+          f"value ≥ {PEAK_MIN}")
+    print(f"   chosen_H per phase: Shannon entropy (nats) of chosen tokens across recurrences")
+    print(f"   gap_over_H per step: logit_gap / max(entropy, {GAP_OVER_H_EPS})")
+    print()
+    print("conventions (revisable; underlying measurements above):")
+    print(f"   period:           smallest in-list divisor of the strongest peak in `peaks`")
+    print(f"   slot:             chosen_H > {SLOT_H_EPS} nats at phase position")
+    print(f"   counter heuristic: int / letter consecutivity at match-fraction ≥ {COUNTER_MATCH_THRESHOLD}")
+    print()
+    print("audit notes:")
+    print(f"   period choice questionable? inspect `peaks=` field on the row")
+    print(f"   slot/scaffold borderline?   chosen_H is reported per phase")
+    print(f"   counter tag confidence?     int/letter delta evidence printed under each slot")
+    print(f"   NOPERIOD specimens may have weak periods just below peak threshold")
     print()
     print("counts by tag:")
     for tag in tag_order:

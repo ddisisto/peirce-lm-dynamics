@@ -109,10 +109,28 @@ def dominant_period(
     lag_max: int = LAG_MAX,
     peak_min: float = PEAK_MIN,
 ) -> int | None:
-    """First peak (lowest lag) from `acf_peaks` — fundamental period under the convention.
+    """Single-int convention over `acf_peaks`: the smallest divisor of the
+    strongest peak that is itself a peak. Falls back to the strongest peak
+    when no in-list divisor is found. `None` when `acf_peaks` is empty.
 
-    `None` when `acf_peaks` returns the empty list (signal variance below
-    noise, or no local maximum in window crosses `peak_min`).
+    The rule resolves harmonic aliasing (true period T appears as a peak
+    ladder T, 2T, 3T, ...; the strongest peak may be at a multiple but the
+    fundamental is the smallest in-list divisor) without misreading
+    sub-periodicities (a weak peak at lag p with `T % p ≠ 0` is a co-existing
+    structure, not a divisor of the fundamental). Both characteristic
+    failure modes of the simpler argmax-in-window and first-peak-above-
+    threshold rules are avoided for cases where harmonics divide the
+    fundamental — the typical case for genuinely periodic signals.
+
+    Convention is revisable; the underlying measurement is `acf_peaks`.
+    Specimens where the convention disagrees with reasonable alternatives
+    are surfaced by inspection of the peak list.
     """
     peaks = acf_peaks(x, lag_min=lag_min, lag_max=lag_max, peak_min=peak_min)
-    return peaks[0][0] if peaks else None
+    if not peaks:
+        return None
+    strongest_lag = max(peaks, key=lambda p: p[1])[0]
+    for lag, _val in peaks:
+        if lag < strongest_lag and strongest_lag % lag == 0:
+            return lag
+    return strongest_lag

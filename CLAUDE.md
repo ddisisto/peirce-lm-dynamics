@@ -2,7 +2,7 @@
 
 *Shapes the context loaded into every Claude session at this path. README.md is the human-facing entry point; this file is for Claude's working context. `MEMORY.md` (auto-loaded) is the per-topic memory index.*
 
-*Last reviewed: `6b0b331` / 2026-05-09, post Cycle-2 cleanup pass (basins.py + C1 production-run scripts retired to `v0.1-final` tag, lit-review.md landed, design-reqs.md @-included). If HEAD has moved past this commit, skim the diff before assuming the picture encoded here is current.*
+*Last reviewed: `b394044` / 2026-05-09, post N1 first-light (phase-aware chosen-token script at `8631813`, observation entry at `b394044`). If HEAD has moved past this commit, skim the diff before assuming the picture encoded here is current.*
 
 ## Always loaded
 
@@ -16,7 +16,7 @@ The empirical question the cycle carries is **shape-of-collapse taxonomy**. The 
 
 The moves below are roughly priority-ordered. Each is small in code (read-only descriptive scripts dominate); none assumes the next has landed.
 
-1. **Phase-aware chosen-token analysis.** Read-only over the substrate. For each trajectory whose deep window has measurable cycle period, partition by phase position and compute chosen-token entropy across recurrences per phase. Phases with non-zero chosen-entropy are slots; their alt distributions are the local prior over each slot's class. Produces the first attractor catalog under the slot/scaffolding decomposition.
+1. **Phase-aware chosen-token analysis** *(first-light landed; observation entry `b394044`)*. Script at `scripts/phase_aware_chosen.py`. Read-only over the substrate; partitions deep window by phase, slot/scaffolding by chosen-token entropy across recurrences, prints empirical chosen + alt distributions per slot. First-light catalog: 19 SLOTTED / 78 SCAFFOLD-only / 3 NOPERIOD; one textbook class-slot specimen (`e1069ae4`, ` first`/` second` with ` contact` as runner-up). Three follow-up threads: (a) period-detection refinement — `dominant_period`'s argmax-in-window logic produces harmonic aliasing in seven `slots = N/N` specimens; switch to first-peak-above-threshold; touches `plot_trajectories.py`; promote to `peirce/shape.py` once a third consumer warrants. (b) Counter-vs-class sub-partition — slotted specimens split into mechanical-successor (consecutive integers / alphabet letters; induction-head copy+increment plausibly) and semantic-class (FV-head class generation plausibly); the slot-readout *operation* is the same but the readout *interpretation* differs sharply; vocabulary needs to mark this. (c) NOPERIOD specimen direct inspection — `1453d66b` has the substrate's highest osc_amp; aperiodic / drifting / quasi-periodic distinction needs a non-period-rigid tool.
 
 2. **Alternate-path continuation.** Engine work, modest. Pick high-H positions, use `Injection` + KV-prefill to extend trajectories from the alt branch. Two questions: does perturbing in the early transient redirect the eventual collapse (transient leverage)? does perturbing at a per-cycle high-H position break / transition / re-absorb (cyclic leverage)? Re-absorption at the perturbation period would be the strongest signature of a stable structured attractor. Argmax-of-non-chosen is the simplest branch-selection rule; the principled extension once first results are in is Gumbel-Top-k sampling-without-replacement (Kool 2019) at the perturbation position, giving K plausible alt-branches proportional to model probability rather than a single argmax pick — see lit-review.md addendum.
 

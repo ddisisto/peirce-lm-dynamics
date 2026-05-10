@@ -71,16 +71,38 @@ The forward sequence of Cycle-2 moves is carried inline in `CLAUDE.md` rather th
 
 In-cycle catalogs are designed to outlast the cycle. The expectation is that Cycle 3's substrate is C2's catalog of record — the consolidated descriptive readout under v0.2 vocabulary — the way C2's substrate is C1's trajectories. Build accordingly. Catalogs are constructed over substrate primitives that are foundation-stable (per-step records, shape metrics computed over them, empirical distributions at structural positions), not over the current cycle's regime taxonomy or working-vocabulary classifications. A catalog should remain legible after a re-founding that retires the vocabulary it was first read in; if a catalog requires the cycle's regime names to interpret its rows, that's a signal it's classifying rather than describing, and the failure mode the discipline guards against.
 
-## Open: regime vocabulary
+## Regime vocabulary
 
-Cycle 1 surfaced a provisional three-regime split among attractor types observable at depth (recorded in `archive/cycle-1-findings.md`). Of that split, the **slot / scaffolding / slot-readout / class-enumeration-attractor** vocabulary is retained going forward — supported by the literature survey at [`lit-review.md`](lit-review.md), which identifies this neighbourhood as project-distinctive (no surveyed work partitions degenerate regimes by within-cycle template structure or treats high-H phase-position alt distributions as recoverable class priors).
+The C2 catalog of record (`scripts/shape_catalog.py`) emits regime tags from the substrate's own shape signals — autocorrelation peaks of the deep-window H-trace, chosen-token entropy across recurrences at each phase position, delta-evidence on slot chosen sequences. Those tags are canonical:
 
-The Cycle-1 sub-regime names *pinned cycle* (R1) and *mode-locked structural attractor* (R2) are deliberately not lifted forward, pending two preconditions:
+- **`SLOTTED`** — detectable period; at least one phase position whose chosen-token distribution across recurrences is non-degenerate (a *slot*, in `foundation.md` vocabulary). Sub-tags differentiate the slot's chosen-sequence character: **`SLOTTED-CLASS`** (chosen rotates through a class with non-trivial alt-distribution density), **`SLOTTED-COUNTER-INT`** (consecutive integer counter at high match-fraction), **`SLOTTED-COUNTER-LETTER`** (consecutive letter counter), **`SLOTTED-MIXED`** (slotted with both class-slot and counter-slot phases coexisting). Counter-vs-class is a tagging heuristic at current N (6 + 1 of 17 SLOTTED specimens carrying a counter sub-tag); the underlying delta-evidence (median chosen-sequence delta, match-fraction) is reported alongside, so the tag is descriptive at this scale, not classificatory.
+- **`SCAFFOLD`** — detectable period; every phase position is pinned (chosen token fixed across recurrences). The trajectory is a clean repeating cycle with no within-cycle slack.
+- **`NOPERIOD`** — no detectable period in the autocorrelation of the deep-window H-trace under current convention (strict local maxima above `PEAK_MIN` in lags `[LAG_MIN, LAG_MAX]`).
 
-1. **Mechanical re-derivation.** The C2 phase-aware chosen-token analysis (forward-sequence move 1 in `CLAUDE.md`) produces per-attractor regime tags from the substrate's own shape signals — chosen-token entropy across recurrences at each phase position. The output of that analysis is what re-enters the working vocabulary as canon, not the by-eye provisional partition.
-2. **Renaming consideration.** The literature survey notes that these sub-regimes are sub-cases of greedy-decoding fixed-point / short-cycle behaviour already known in the Markov-chain literature (Geng et al. 2603.11228, Zekri et al. 2410.02724); the names that survive into canon should reference the within-cycle distinction property directly (e.g. *single-mode cycle* / *single-mode template cycle*) rather than coining genre-labels that imply Peirce introduced the cycle phenomenon.
+### Precedent
 
-When both preconditions are met, regime vocabulary lands in `observations.md` (per-attractor entries) or a successor `basins.md` (catalog form), with this document updated to point at the canonical naming.
+Both Markov-chain framings of LM dynamics in the surveyed neighbourhood (Geng et al. 2603.11228, Zekri et al. 2410.02724) stop at "the chain has entered a recurrent set" without decomposing within-cycle structure. The slot/scaffolding axis on which `SLOTTED` and `SCAFFOLD` are partitioned is project-distinctive — no surveyed work names it. The standalone precedent review at [`reports/regime-vocab-precedent.md`](reports/regime-vocab-precedent.md) (read pinned to commit `4309b3e`, report itself committed at `f7cc476`) extracts terminology, formalisation scope, and within-cycle treatment from both papers section-by-section; the original survey at [`lit-review.md`](lit-review.md) carries an addendum noting the canonisation pass.
+
+The *coarse* axis is well-known and is credited explicitly:
+
+- **`SCAFFOLD-period-1`** at the per-token level is — under Zekri's token-level transition kernel `Q_f` — a Markov-chain fixed point. The alias is near-identical, not just analogous: the trajectory's repeating state is one with `Q_f` self-transition under deterministic decoding, which is the textbook fixed-point definition at that abstraction.
+- **`PERIODIC` vs `NOPERIOD`** (the umbrella distinction over `SLOTTED` ∪ `SCAFFOLD` vs `NOPERIOD`) is conceptually adjacent to Geng's "fixed point or short cycle" vs "long pre-recurrence phase" and Zekri's "in recurrent class" vs "in transient class / slow mixing". Granularity differs (sentence-level vs per-token; first-recurrence-time and mixing-time vs autocorrelation-period), so the alias is conceptual rather than identical.
+
+Names that would imply Peirce introduced "trajectories enter cycles" are avoided; the cycle phenomenon is well-established Markov-chain content. The project's contribution is the within-cycle decomposition, and the canonical tags reference it directly without coining genre-labels for the umbrella phenomenon.
+
+### Period and attractor — three-way ambiguity
+
+"Period" carries three distinct meanings in the surveyed neighbourhood:
+
+1. **Markov-chain period** — gcd of return times to a state. Zekri's chain is aperiodic-by-construction (via the deletion process), so this is trivially 1 throughout their analysis.
+2. **Dynamical-systems period** — cycle length under iteration. Geng's "2-cycle" example is at this granularity, on sentence-level state.
+3. **Peirce's period** — autocorrelation peak of the deep-window H-trace, in lags `[LAG_MIN, LAG_MAX]`. The flagged-convention treatment in the shape-primitives section above (`peaks` as primitive, `period` as convention layer) handles the ambiguity within the project; readers crossing in from either Markov-chain meaning should not conflate.
+
+"Attractor" carries similar ambiguity: Wu et al. 2502.15208 uses "attractor cycle" centrally for iterated-paraphrasing; Geng uses it twice as decoration on "recurrent class"; Zekri does not use the term; `foundation.md` defines it as a region of phase space that trajectories enter and remain in. The project's own use is well-grounded; the granularity (per-step T=0 self-conditioning under fixed initial condition) is what positions it against the neighbours.
+
+### Forward thread
+
+Ivgi et al. 2407.06071 ("From loops to oops: fallback behaviors of language models under uncertainty") — cited by Zekri as the in-practice repetition reference — is flagged as a possible finer-grained precedent. Pre-cleared by hand as conceptually overlapping at coarser granularity than the slot/scaffolding decomposition, not pressing for the canonisation; carried as a future precedent pass and parked in `ideas.md`.
 
 ## Foundations supremacy
 

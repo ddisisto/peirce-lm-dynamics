@@ -47,16 +47,14 @@ from collections import Counter
 import numpy as np
 
 from peirce.runner import default_store_path
+from peirce.shape import DEEP_START, LAG_MAX, LAG_MIN, PEAK_MIN, dominant_period
 from peirce.store import open_store, read_observation
 
 
 SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
 SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
-DEEP_START = 1024
 SLOT_H_EPS = 1e-3            # chosen-token H above this counts as non-degenerate
-LAG_MIN, LAG_MAX = 2, 128    # autocorrelation search window (matches plot_trajectories)
-PEAK_MIN = 0.3               # autocorrelation peak threshold
 TOP_K_SLOT_DIST = 8          # how many tokens to print per slot distribution
 
 
@@ -69,34 +67,6 @@ def is_selection_bias_obs(predicates_json: str) -> bool:
         if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
             return False
     return True
-
-
-def dominant_period(
-    x: np.ndarray, lag_min: int = LAG_MIN, lag_max: int = LAG_MAX, peak_min: float = PEAK_MIN
-) -> int | None:
-    """Lag of the first significant autocorrelation peak in [lag_min, lag_max].
-
-    Copy of `scripts/plot_trajectories.py:dominant_period`. Candidate for
-    promotion to a `peirce/shape.py` module once a third consumer lands;
-    duplicated here to keep N1 standalone.
-    """
-    if x.size < lag_max * 2:
-        return None
-    x = x - x.mean()
-    if x.std() < 1e-4:
-        return None
-    n = x.size
-    ac = np.correlate(x, x, mode="full")[n - 1:]
-    if ac[0] <= 0:
-        return None
-    ac = ac / ac[0]
-    region = ac[lag_min : lag_max + 1]
-    if region.size == 0:
-        return None
-    idx = int(np.argmax(region))
-    if region[idx] < peak_min:
-        return None
-    return lag_min + idx
 
 
 def shannon_H_nats(counter: Counter) -> float:

@@ -58,6 +58,13 @@ from matplotlib import colors as mcolors
 from matplotlib import cm
 
 from peirce.runner import default_store_path
+from peirce.shape import (
+    DEEP_START,
+    ONSET_SMOOTHING,
+    ONSET_THRESHOLD,
+    dominant_period,
+    entropy_onset,
+)
 from peirce.store import open_store, read_observation
 
 
@@ -65,9 +72,6 @@ from peirce.store import open_store, read_observation
 SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
 SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
-ONSET_THRESHOLD = 0.1
-ONSET_SMOOTHING = 8
-DEEP_START = 1024  # left edge of the "post-collapse" window for shape metrics
 SMOOTH_WINDOW = 16
 
 OUT_DIR = Path("data/plots")
@@ -97,46 +101,6 @@ def is_selection_bias_obs(predicates_json: str) -> bool:
         if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
             return False
     return True
-
-
-def entropy_onset(entropy: np.ndarray) -> int | None:
-    """First position where ONSET_SMOOTHING consecutive steps stay below threshold."""
-    consecutive = 0
-    for i, e in enumerate(entropy):
-        if e < ONSET_THRESHOLD:
-            consecutive += 1
-            if consecutive >= ONSET_SMOOTHING:
-                return i - ONSET_SMOOTHING + 1
-        else:
-            consecutive = 0
-    return None
-
-
-def dominant_period(
-    x: np.ndarray, lag_min: int = 2, lag_max: int = 128, peak_min: float = 0.3
-) -> int | None:
-    """Lag of the first significant autocorrelation peak in [lag_min, lag_max].
-
-    Returns None when the signal is essentially constant (std below 1e-4) or
-    no lag in the window has normalized autocorrelation >= peak_min.
-    """
-    if x.size < lag_max * 2:
-        return None
-    x = x - x.mean()
-    if x.std() < 1e-4:
-        return None
-    n = x.size
-    ac = np.correlate(x, x, mode="full")[n - 1:]
-    if ac[0] <= 0:
-        return None
-    ac = ac / ac[0]
-    region = ac[lag_min : lag_max + 1]
-    if region.size == 0:
-        return None
-    idx = int(np.argmax(region))
-    if region[idx] < peak_min:
-        return None
-    return lag_min + idx
 
 
 def smooth(x: np.ndarray, window: int = SMOOTH_WINDOW) -> np.ndarray:

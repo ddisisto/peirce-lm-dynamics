@@ -67,3 +67,58 @@ These have measurable entropy oscillation but no autocorrelation peak ≥ 0.3 in
 - **NOPERIOD specimen direct inspection.** Render the deep-window entropy trace and chosen-token sequence for `1453d66b`; ask whether it's drifting (period changes over the window), quasi-periodic, or genuinely aperiodic.
 - **Slot-readout under inference.** The empirical alt distributions reported here are top-1-alt-only (the persisted record carries one alt per step). Full-distribution slot-readout would require re-running inference at slot positions and capturing the rank-1..rank-K distribution; this is N3-adjacent (seeded class-enumeration uses the same machinery) but worth noting as a distinct future move if the empirical alt readouts continue to surface interesting class structure.
 
+
+## 2026-05-10 — N1.5 catalog: shape catalog under v0.2 vocabulary
+
+**Commit:** `3be3208`
+**Run:** `uv run python scripts/shape_catalog.py`
+**Config:** read-only over `data/peirce.db`; 100 fp16 selection-bias observations; deep window `[1024, end)`; period detection via `peirce.shape.acf_peaks` (local maxima ≥ 0.3 in lag ∈ [2, 128]); slot threshold chosen-token H > 1e-3 nats; counter heuristic int/letter consecutivity at match-fraction ≥ 0.75; gap_over_H per step computed as `gap / max(entropy, 1e-4)`.
+
+### Shape primitive contract revision
+
+The autocorrelation peak list is the underlying period-structure measurement; calling any single integer "the period" is a convention over that list, with characteristic failure modes for any single rule. `design-reqs.md` now lists `peaks` as a shape primitive and `period` as a single-int convention layer over it. Current convention is divisor-aware: smallest in-list divisor of the strongest peak; falls back to the strongest peak when no in-list divisor is found. Convention is revisable; convention disagreements are auditable by inspection of the `peaks` field on every catalog row.
+
+The shape primitives `entropy_onset`, `acf_peaks`, `dominant_period` are promoted from the inlined copies in `scripts/plot_trajectories.py` and `scripts/phase_aware_chosen.py` to a shared `peirce/shape.py` module. Both existing consumers updated to import from there; the catalog is the third consumer that warranted the promotion.
+
+### Partition counts under the corrected convention
+
+- **SLOTTED:** 26 / 100
+  - CLASS: 17
+  - MIXED (multi-slot trajectory with both counter and class slots): 2
+  - COUNTER-INT: 6
+  - COUNTER-LETTER: 1
+- **SCAFFOLD:** 66 / 100
+- **NOPERIOD:** 8 / 100
+
+Comparison to N1 first-light (under the prior argmax-in-window period rule, observation `b394044`): SLOTTED 19 / SCAFFOLD 78 / NOPERIOD 3. The three-way structure is robust to the convention change; specifics shifted as ~7 specimens moved SCAFFOLD → SLOTTED (harmonic-aliased trajectories now reading at the fundamental period and showing slots) and ~5 moved PERIODIC → NOPERIOD (specimens with monotonically rising acf into out-of-window, now correctly excluded by the strict-local-max definition rather than picking up `lag_max` as argmax).
+
+### Diagnostic specimen verdicts under the new convention
+
+- **`e1069ae4`** (textbook class slot): period=43 (prime), peaks=[(43,0.92), (86,0.90)], slot at phase 0, chosen=` first`×14 / ` second`×10, alt=` contact`×3. Recovers N1 first-light reading.
+- **`e1afc61b`** (counter slot): peaks include both fundamental at 29 (acf 0.96) and weak sub-periodicity at 7 (acf 0.40); divisor rule correctly returns 29 (29 % 7 ≠ 0). Slot at phase 18, chosen=`36`/`37`/.../`70`, delta evidence median=+1, frac=1.00 → COUNTER-INT. Recovers N1 first-light reading.
+- **`134c9875`** (nested 2-and-26): peaks=[(2,0.44),(24,0.44),(26,0.97),(28,0.42),(50,0.43),(52,0.93),...]; divisor rule returns 2 (smallest in-list divisor of strongest=26). Period-2 alternation captures the within-cycle structure cleanly; the 26-period harmonic structure is preserved in the peaks field.
+- **`0a4614cd`** (chosen-token / H-trace period divergence): peaks=[(96,0.62)] only. 96/96 slots at chosen_H=1.768 ≈ ln(6) — i.e. 6 distinct tokens rotating across phases. The chosen-token rotation has period 96/6=16, but the entropy timeseries autocorrelation at lag 16 sits below `peak_min=0.3`. The catalog reports the H-trace measurement honestly (no detectable lag-16 peak) and the divergence is visible in the slot-readout (rotation pattern across the 96 phases is the same 6-element class). A real subtlety: chosen-token-rotation period and acf-of-H-trace period can diverge; the catalog doesn't fabricate the rotation period from the chosen tokens.
+
+### SCAFFOLD commitment-strength heterogeneity
+
+Position-resolved gap readouts surface the within-SCAFFOLD heterogeneity. Examples:
+
+- **`d8e73c51`** (period=116, osc_amp=0.3841, peaks=[(116,0.87)] single peak): commit-soft phases at gap_med ≈ 0.27 (chosen=`------`, `~~~`) alongside commit-hard phases at gap_med ≈ 39.75. The trajectory carries a fixed token-template with extreme intra-template commitment variance.
+- **`b9cfdf7b`** (period=22, full harmonic ladder peaks=[(22,0.98),(44,0.96),(66,0.94),(88,0.92),(110,0.90)]): one near-bifurcation phase at gap_med=0.469 (chosen=` "`) with the rest at 7+ — a single weakly-committed phase within an otherwise strongly-pinned scaffold.
+- **`7dbde4ff`** (period=63 fundamental, peaks include weak side-peaks at lags 2, 61, 65, 126, 128): the side-peaks at 61/65 and 126/128 are 63±2 / 126±2 — period-2 sub-structure interfering with the period-63 fundamental, visible directly in the peak list.
+
+### Counter-vs-class as a description tool
+
+With N=6 COUNTER-INT / N=1 COUNTER-LETTER / N=17 CLASS / N=2 MIXED, the heuristic is descriptive at this sample, not a classifier. The catalog reports the underlying delta evidence (int and letter delta median + match-fraction) under each slot row, so the convention's tag is auditable per-slot. Counter slots in the substrate display essentially perfect arithmetic structure (median delta = +1, match-fraction = 1.00 in the typical case); class slots show no integer or letter consecutivity (delta evidence reads as N/A). The mid-cases the heuristic was designed to surface — partial-counter-with-noise, or class-rotation-that-happens-to-be-numerically-ordered — do not yet appear in the substrate.
+
+### N2 candidate hand-off
+
+The catalog's principled candidate list (lowest gap_over_H positions in the deep window) is dominated by `e1069ae4`'s slot positions (chosen=` first` / ` second`, gap_over_H ≈ 0.0–0.2) — the textbook class-slot's near-bifurcation moments, which is what the principle would predict. The simplest baseline list (highest H positions) tops out at the NOPERIOD specimen `1453d66b` at H=4.68 and the COUNTER-LETTER specimen `f008f7d2`. Both lists ship in the catalog output for N2 to consume.
+
+### Follow-ups
+
+- **NOPERIOD specimen audit.** Now 8 specimens (was 3); the `1453d66b` highest-osc_amp one is still the most interesting. The 5 new NOPERIOD additions are likely monotonically-rising-acf-into-out-of-window trajectories that the strict-local-max rule correctly excludes; worth confirming by inspecting their peak lists (which should be empty under the current threshold) and considering whether a wider lag window or lower peak threshold is warranted for any of them.
+- **Counter-vs-class with N=6/17.** The heuristic is descriptive at this sample. Lifting into project vocabulary requires more specimens (or seeded probing under N3) to populate the mid-cases.
+- **`0a4614cd` chosen-token-period vs H-trace-period divergence.** The catalog reports both signals honestly but the catalog doesn't currently *name* the divergence. If more such specimens emerge, a named tag (e.g. `SLOTTED-ROTATION-AT-HARMONIC` or similar) may earn its keep.
+- **Regime-vocabulary canonisation (`design-reqs.md` "Open: regime vocabulary").** Precondition 1 (mechanical re-derivation from shape signals) is now effectively met by the catalog. Precondition 2 (renaming consideration vs Markov-chain prior art — Geng 2603.11228, Zekri 2410.02724) is the remaining work.
+

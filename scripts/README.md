@@ -14,6 +14,8 @@ All runs use `peirce.runner.observe(...)` rather than calling the engine directl
 
 ## Read-only renderers
 
+- `shape_catalog.py` — the C2 consolidated descriptive catalog under v0.2 vocabulary. Per-trajectory rows grouped by tag (SLOTTED-CLASS / -COUNTER-INT / -COUNTER-LETTER / -MIXED / SCAFFOLD / NOPERIOD), per-slot chosen + alt distributions with delta-evidence for the counter-vs-class heuristic, position-resolved `logit_gap` and `gap_over_H` readouts. Aggregate sections: counts by tag, top-K candidate positions by lowest `gap_over_H` (principled N2 candidates) and highest H (baseline). Reports `peaks=` per row so period-convention choices are auditable. Same selection-bias predicate-set filter as `plot_trajectories.py`.
+- `phase_aware_chosen.py` — N1 first-light renderer; partitions deep window by phase (under the `peirce.shape.dominant_period` convention) and prints chosen + alt distributions per slot. Functionally subsumed by `shape_catalog.py` for canonical use; preserved as the leaner standalone reading. Same selection-bias filter.
 - `plot_trajectories.py` — matplotlib renderings under `data/plots/`: `trajectories_aggregate.png`, `trajectories_shape.png`, `trajectories_outliers.png`, `trajectories_grid.png`. Per-trajectory shape metrics (`onset`, `floor_H`, `floor_gap`, `osc_amp`, `period`, `gap_over_H`) computed from the deep window `[1024, end)`. Filters observations to the C1 selection-bias predicate-set by string match against stored predicate-spec JSON; no live `basin_capture` code dependency.
 - `high_h_readout.py` — top-N highest-entropy positions per trajectory in the deep window, with chosen / alt / context tokens. The descriptive half of the slot-readout operation. Same string-match filter as `plot_trajectories.py`.
 

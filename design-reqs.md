@@ -25,7 +25,7 @@ The Cycle-1 substrate is the read-only trunk that Cycle-2 work extends. It compr
 - **Predicate set.** `eos`, `budget_cap`, `window_cap` from `peirce.predicates`. The C1 substrate also carries `basin_capture` terminal-event tags on observations produced by retired runs (`broad_shallow`, `selection_bias`); the predicate implementation is preserved at git tag `v0.1-final` and removed from the live module surface. Terminal-event tags persist on observations as a record of where the predicate fired, not as a population label or basin classification. New C2 runs use only `eos` / `budget_cap` / `window_cap`; a C2-appropriate replacement (a slot-completion probe, or another shape-aware terminator) is introduced if and when a C2 move warrants one.
 - **Materialised depth.** All 100 trajectories are extended to L_arch=2047. The depth window `[1024, end)` is the conventional "deep window" over which shape metrics are computed.
 
-Cycle-2 work treats this substrate as fixed input. Re-running C1 scripts cache-hits.
+Cycle-2 work treats this substrate as fixed input. Re-running C1 scripts cache-hits. The inheritance is at the *trajectory* level (the `(stack, initial_ids, injections)` tuples and their materialised steps); C2 *observations* are new from here by construction — any C2 inference run produces new observation rows under new predicate sets or new injections, leaving the C1 observation rows preserved as historical record. The two-hash identity makes this clean: trajectory rows cache-hit when re-encountered; observation rows are write-once and accumulate.
 
 ## Shape primitives
 
@@ -65,6 +65,10 @@ The first cycle's working shape was **broad-shallow → representative-deep → 
 Cycle 2 holds the trunk read-only and works as **in-fill via branching**. The C1 in-fill explored *which trajectories to produce* under non-branching extension; C2 explores *the branches off existing trajectories* — alternate-path continuations from selected positions on the 100, complemented by seeded class-enumeration probing. Both interesting positions (high-H slots, transient-leverage points) and baseline non-interesting positions (for control) are in scope; partitioning by what the substrate's shape signals is the entry point.
 
 The forward sequence of Cycle-2 moves is carried inline in `CLAUDE.md` rather than this document, because it shifts faster than the substrate contract and benefits from being in primary context for every session.
+
+## Cycle-to-cycle inheritance
+
+In-cycle catalogs are designed to outlast the cycle. The expectation is that Cycle 3's substrate is C2's catalog of record — the consolidated descriptive readout under v0.2 vocabulary — the way C2's substrate is C1's trajectories. Build accordingly. Catalogs are constructed over substrate primitives that are foundation-stable (per-step records, shape metrics computed over them, empirical distributions at structural positions), not over the current cycle's regime taxonomy or working-vocabulary classifications. A catalog should remain legible after a re-founding that retires the vocabulary it was first read in; if a catalog requires the cycle's regime names to interpret its rows, that's a signal it's classifying rather than describing, and the failure mode the discipline guards against.
 
 ## Open: regime vocabulary
 

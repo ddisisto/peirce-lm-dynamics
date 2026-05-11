@@ -1,8 +1,9 @@
 # scripts/ — runs, renderers, smoke tests
 
-Drivers over the `peirce/` library. Three kinds:
+Drivers over the `peirce/` library. Four kinds:
 
 - **substrate-building runs** — populate the long-lived store at `data/peirce.db`
+- **branch runs** — alternate-path continuations off existing substrate trajectories (C2 branching protocol)
 - **read-only renderers** — read the store, no model load, no inference; produce figures and stdout reports
 - **smoke tests** — fast end-to-end checks of library invariants
 
@@ -11,6 +12,12 @@ All runs use `peirce.runner.observe(...)` rather than calling the engine directl
 ## Substrate-building runs
 
 - `full_depth_extension.py` — top-K from BOS × L_arch=2047 under predicates `[eos, window_cap]`, hard-cap T=0, one `Injection` per branch at position 0. From an empty store: builds the substrate from scratch. From a populated store (e.g. after C1's retired `broad_shallow` + `selection_bias` runs produced shallower observations of the same trajectories): cache-hits trajectory rows and prefills only the steps past their existing materialised depth. `FULL_DEPTH_TOP_K` env var overrides K (default 100). Forward-targeted for rename + docstring rewrite once the C2 substrate-construction story is locked; current docstring carries C1-historical motivation as record.
+
+## Branch runs
+
+C2 branching protocol drivers — call `runner.branch_observe` to extend the substrate with alternate-path continuations. Branch identity is parent-independent by hash construction over the augmented injections tuple; branches land in the same store under fresh `trajectory_id`s, cache-hit on re-run, share storage with no parent-link bookkeeping (B1 schema per `design-reqs.md`).
+
+- `first_batch_branches.py` — 25 branches across the trajectory_id exemplars surfaced in `observations.md` (N1 first-light, N1.5 catalog, NOPERIOD audit). Uniform selection rule: argmin `gap_over_H` over the deep window `[1024, end)` per trajectory; alt token is the persisted `alt_token_id` at that step (argmax-of-non-chosen). Predicates `[eos, window_cap(L_arch)]` matching the substrate. Tabular stdout per branch: `(idx, regime tag, parent prefix, branch position, H, gap, gap_over_H, alt token, branch prefix, terminal event, length, elapsed)`. Reproduces from store + commit.
 
 ## Read-only renderers
 
@@ -46,7 +53,6 @@ The following C1-vintage scripts were retired in the cycle-2 cleanup pass and ar
 
 ## Aspirational — C2 branching surface
 
-The C2 branching protocol (`design-reqs.md`) extends the script set:
+`first_batch_branches.py` lands the first batch (see Branch runs above). One descriptive companion remains aspirational:
 
-- **Branch runs.** Per-batch scripts driving `runner.branch_observe`. First batch is ~10 branches across regime tags per the protocol; the run reads candidate positions from the C2 catalog's principled (lowest `gap_over_H`) and baseline (highest deep-window H) lists, builds branch runs using each candidate's persisted `alt_token_id` (first-batch argmax-of-non-chosen rule), persists the resulting trajectories. Cache-hits on re-run via the existing observation-identity seam.
-- **Branch comparison renderer.** A read-side renderer that puts parent and branch on common axes — token-level divergence, H-trace divergence, position-resolved `logit_gap` and `gap_over_H`. Named here; design deferred until first-batch results inform the relevant comparisons.
+- **Branch comparison renderer.** A read-side renderer that puts parent and branch on common axes — token-level divergence, H-trace divergence, position-resolved `logit_gap` and `gap_over_H`. Named in `design-reqs.md`; design deferred until first-batch results inform the relevant comparisons.

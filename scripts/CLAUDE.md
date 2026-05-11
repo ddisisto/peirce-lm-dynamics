@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 2026-05-11 — C2 branching protocol aspirational surface)*
+@README.md *(updated 2026-05-11 — first_batch_branches lands as concrete Branch runs entry)*
 
 ## Standards within this path
 

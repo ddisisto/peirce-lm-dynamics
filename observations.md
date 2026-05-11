@@ -169,3 +169,156 @@ Cluster A specimens are uninteresting under either selection rule (gap_over_H is
 - **Sub-tag consideration.** If downstream work makes the within-NOPERIOD distinction load-bearing — e.g. N2 results show Cluster B and Cluster A respond differently to perturbation — a sub-tag like `NOPERIOD-SPIKE` (bimodal H with sub-threshold peaks) vs `NOPERIOD-SMOOTH` (monotonic acf decay, no structure) would earn its keep. The audit script's diagnostics are the operational definition. Not landed pre-emptively.
 - **The Cluster B / SCAFFOLD-with-soft-phases similarity.** Both have super-committed positions punctuated by lower-commitment positions. SCAFFOLD has the structure repeating at a period; Cluster B has spike events at quasi-periodic intervals too weak to register. Worth a side-by-side comparison if N2 finds them responding similarly to perturbation — they may be points along a continuum of "structured commitment with rare uncertainty" rather than separate phenomena.
 
+
+## 2026-05-11 — N2 first batch: alternate-path continuations over the observations exemplars
+
+**Commits:** `02aaa0e` (batch run) + `680ccd1` (comparison reader).
+**Run:** `uv run python scripts/first_batch_branches.py` followed by `uv run python scripts/branch_compare.py`.
+**Config:** 25 branches, one per trajectory_id surfaced across the prior three observation entries. Per parent, branch position is `argmin gap_over_H` over the deep window `[1024, end)`; alt token is the persisted `alt_token_id` at that step (argmax-of-non-chosen). Predicates `[eos, window_cap(L_arch=2048)]` matching the substrate; inference hard-cap T=0. B1 schema (full prefix duplication per `design-reqs.md`).
+
+### Headline
+
+The 25 branches all terminate at `window_cap`, length 2047 — zero EOS escapes. (Anticipated: no EOS in the 100-trajectory substrate either.) Outcome distribution under a heuristic 3-way classifier on (period preservation, peak-acf preservation, divergence span) is **6 re-absorbed / 5 wandering / 14 basin-switch** — basin-switch is the modal outcome of perturbation at the principled axis position.
+
+Three readings emerge that warrant the entry:
+
+1. **The principled axis (lowest `gap_over_H`) does not classify "leverage" cleanly.** Cluster A controls and SLOTTED-CLASS textbook bifurcation moments both produce re-absorption — but via completely different mechanisms (overwhelming absorbing-region pull vs. within-cycle slot rotation). SCAFFOLD and COUNTER specimens, despite spanning the T_req range, are basin-switch-prone. Leverage is a (position, attractor) interaction, not a position property.
+
+2. **Reframing the perturbation as a sampling-strategy proxy via `T_req` makes the experiment legible against the decoding literature.** For each branch, `T_req = gap / log(9)` is the temperature at which the alt-token would have probability 0.1 under a two-token softmax over (chosen, alt) — the temperature at which standard stochastic sampling would realistically pick the alt. The forced-alt branch then observes what one such pick would do, freed from the bandit-stochastic-sampling cost of waiting for the right random draw across N passes.
+
+3. **Basin-switch is common across all `T_req` buckets, including the low-T_req cases.** At the principled-axis positions, standard temperature sampling at modest T would frequently shift the trajectory to a different attractor, not produce within-attractor exploration. This is the project-distinctive empirical claim the entry carries forward.
+
+### Table 1: branch positions in sampling terms
+
+| # | regime | parent | bp | alt | gap | T_req | alt p(T=1) |
+|---|---|---|---:|---|---:|---:|---:|
+|  0 | SLOTTED-CLASS          | `49ba0b75` | 1368 | `' first'` | 0.047 | 0.021 | 0.381 |
+|  1 | SLOTTED-COUNTER-INT    | `13f9cd8d` | 1040 | `'Q'` | 3.126 | 1.423 | 0.032 |
+|  2 | SLOTTED-COUNTER-INT    | `d24c9484` | 1046 | `'**'` | 3.827 | 1.742 | 0.019 |
+|  3 | SLOTTED-COUNTER-LETTER | `d2562221` | 1694 | `'The'` | 5.016 | 2.283 | 0.006 |
+|  4 | SLOTTED-COUNTER-INT    | `1f812a06` | 1788 | `'#'` | 6.281 | 2.859 | 0.002 |
+|  5 | SLOTTED-HARMONIC       | `5f3c1e41` | 1070 | `'\n'` | 2.376 | 1.081 | 0.079 |
+|  6 | SLOTTED-HARMONIC       | `9bde3a7a` | 1033 | `'-'` | 0.422 | 0.192 | 0.388 |
+|  7 | SLOTTED-HARMONIC       | `a36f4b57` | 1217 | `'    '` | 2.016 | 0.917 | 0.109 |
+|  8 | SLOTTED-HARMONIC       | `fffba0e8` | 1037 | `'\n'` | 0.094 | 0.043 | 0.461 |
+|  9 | SLOTTED-HARMONIC       | `0a52701d` | 1094 | `'soft'` | 0.875 | 0.398 | 0.273 |
+| 10 | SLOTTED-HARMONIC       | `a2cfa7d4` | 2010 | `'6'` | 2.437 | 1.109 | 0.080 |
+| 11 | SLOTTED-HARMONIC       | `60e599bd` | 1437 | `'":'` | 0.031 | 0.014 | 0.491 |
+| 12 | SCAFFOLD               | `edb2b7cf` | 1129 | `'~~~'` | 0.266 | 0.121 | 0.403 |
+| 13 | SCAFFOLD               | `8ea1fab2` | 1031 | `'m'` | 5.007 | 2.279 | 0.005 |
+| 14 | SCAFFOLD               | `fa70f050` | 1025 | `'m'` | 5.157 | 2.347 | 0.005 |
+| 15 | SCAFFOLD               | `052ebc5a` | 1127 | `' Empire'` | 0.156 | 0.071 | 0.460 |
+| 16 | SCAFFOLD               | `4a211c24` | 1062 | `'\n\n'` | 1.218 | 0.554 | 0.228 |
+| 17 | NOPERIOD-A             | `9af67bb8` | 1191 | `'<24-space>'` | 6.015 | 2.737 | 0.002 |
+| 18 | NOPERIOD-A             | `53e800cb` | 1039 | `'<24-space>'` | 5.242 | 2.386 | 0.005 |
+| 19 | NOPERIOD-A             | `5b628579` | 1187 | `'<24-space>'` | 6.031 | 2.745 | 0.002 |
+| 20 | NOPERIOD-A             | `7c7228bf` | 1193 | `'<24-space>'` | 5.983 | 2.723 | 0.002 |
+| 21 | NOPERIOD-A             | `c82e06a6` | 1690 | `'<24-space>'` | 6.109 | 2.780 | 0.002 |
+| 22 | NOPERIOD-B             | `48a13037` | 1850 | `'3'` | 0.312 | 0.142 | 0.149 |
+| 23 | NOPERIOD-B             | `7c66ed46` | 1034 | `' ninth'` | 0.375 | 0.171 | 0.402 |
+| 24 | NOPERIOD-B             | `4e26d572` | 1628 | `' th'` | 0.039 | 0.018 | 0.358 |
+
+(`<24-space>` is a literal 24-character whitespace token — the absorbing token for the NOPERIOD-A bucket. The argmax token at all these positions is a longer whitespace string, the alt is a shorter one.)
+
+### Table 2: branch outcomes
+
+| # | regime | parent → branch | n_diff/tail | div_span | parent period | branch period | parent acf | branch acf | outcome |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|
+|  0 | SLOTTED-CLASS          | `49ba0b75` → `2c3409c7` | 2/679 (0%) | 44 | 43 | 43 | 0.92 | 0.92 | **re-absorbed** |
+|  1 | SLOTTED-COUNTER-INT    | `13f9cd8d` → `46518fc8` | 996/1007 (99%) | 1007 | 29 | 7 | 0.40 | 0.60 | **basin-switch** |
+|  2 | SLOTTED-COUNTER-INT    | `d24c9484` → `29372e73` | 1000/1001 (100%) | 1001 | 22 | 5 | 0.88 | 0.67 | **basin-switch** |
+|  3 | SLOTTED-COUNTER-LETTER | `d2562221` → `6ef6e55b` | 336/353 (95%) | 351 | 19 | 5 | 0.62 | 0.55 | **basin-switch** |
+|  4 | SLOTTED-COUNTER-INT    | `1f812a06` → `8b1884cd` | 236/259 (91%) | 259 | 7 | 3 | 0.80 | 0.77 | **basin-switch** |
+|  5 | SLOTTED-HARMONIC       | `5f3c1e41` → `ba444ec0` | 917/977 (94%) | 977 | 96 | 96 | 0.62 | 0.32 | **basin-switch** |
+|  6 | SLOTTED-HARMONIC       | `9bde3a7a` → `4f25d036` | 974/1014 (96%) | 1014 | 77 | 81 | 0.31 | 0.30 | **basin-switch** |
+|  7 | SLOTTED-HARMONIC       | `a36f4b57` → `0aa38505` | 802/830 (97%) | 830 | 65 | 6 | 0.31 | 0.48 | **basin-switch** |
+|  8 | SLOTTED-HARMONIC       | `fffba0e8` → `f7b89c9b` | 959/1010 (95%) | 1010 | 24 | None | 0.34 | — | **basin-switch** |
+|  9 | SLOTTED-HARMONIC       | `0a52701d` → `41c3cb6f` | 916/953 (96%) | 953 | 5 | 5 | 0.40 | 0.31 | **wandering** |
+| 10 | SLOTTED-HARMONIC       | `a2cfa7d4` → `b8b92b7b` | 35/37 (95%) | 37 | 3 | 3 | 0.46 | 0.66 | **wandering** |
+| 11 | SLOTTED-HARMONIC       | `60e599bd` → `ef944e2d` | 133/610 (22%) | 248 | 2 | 2 | 0.61 | 0.62 | **wandering** |
+| 12 | SCAFFOLD               | `edb2b7cf` → `60565ac7` | 448/918 (49%) | 877 | 116 | 116 | 0.87 | 0.85 | **wandering** |
+| 13 | SCAFFOLD               | `8ea1fab2` → `bc144e5e` | 4/1016 (0%) | 4 | 25 | 25 | 0.97 | 0.34 | **basin-switch** |
+| 14 | SCAFFOLD               | `fa70f050` → `57a9a24a` | 983/1022 (96%) | 1022 | 2 | 26 | 0.44 | 0.34 | **basin-switch** |
+| 15 | SCAFFOLD               | `052ebc5a` → `3747e1c0` | 822/920 (89%) | 910 | 22 | 21 | 0.98 | 0.69 | **basin-switch** |
+| 16 | SCAFFOLD               | `4a211c24` → `5fd27357` | 946/985 (96%) | 985 | 63 | 4 | 0.37 | 0.41 | **basin-switch** |
+| 17 | NOPERIOD-A             | `9af67bb8` → `d1927704` | 1/856 (0%) | 1 | None | None | — | — | **re-absorbed** |
+| 18 | NOPERIOD-A             | `53e800cb` → `5c684641` | 1/1008 (0%) | 1 | None | None | — | — | **re-absorbed** |
+| 19 | NOPERIOD-A             | `5b628579` → `4e2eccf4` | 1/860 (0%) | 1 | None | None | — | — | **re-absorbed** |
+| 20 | NOPERIOD-A             | `7c7228bf` → `2dd5f560` | 1/854 (0%) | 1 | None | None | — | — | **re-absorbed** |
+| 21 | NOPERIOD-A             | `c82e06a6` → `5b138bb5` | 357/357 (100%) | 357 | None | 2 | — | 0.75 | **basin-switch** |
+| 22 | NOPERIOD-B             | `48a13037` → `0b2741f2` | 180/197 (91%) | 197 | None | None | — | — | **re-absorbed** |
+| 23 | NOPERIOD-B             | `7c66ed46` → `66eb3cfe` | 976/1013 (96%) | 1013 | None | None | — | — | **wandering** |
+| 24 | NOPERIOD-B             | `4e26d572` → `a0b2ed38` | 233/419 (56%) | 406 | None | 58 | — | 0.48 | **basin-switch** |
+
+### Re-absorbed cluster (n=6)
+
+Two distinct mechanisms produce re-absorption:
+
+- **Overwhelming absorbing-region pull (4 specimens).** All 4 are NOPERIOD-A controls (`9af67bb8`, `53e800cb`, `5b628579`, `7c7228bf`) at `T_req` ~2.4–2.7. The injected alt diverges at the injection position itself (1 of 850+ tail positions, 0%) and the very next step returns to the absorbing token. The model holds a 24-character whitespace string with logit gap ~6 over a shorter whitespace alt; forcing the shorter one for a single step does not perturb the system's state, because the absorbing region's basin is wider than one-token's-worth of context displacement. Confirms the audit's read on Cluster A: honest absorbing regions with no within-trajectory perturbation surface.
+
+- **Within-cycle slot rotation (1 specimen).** `49ba0b75` (SLOTTED-CLASS, `T_req` = 0.021). Branch position 1368 had parent ` second` / alt ` first`. The branch diverges only at position 1368 and again at position 1411 (= 1368 + parent period 43), then is identical to the parent for the remaining 636 positions. The branch's deep-window phase-0 slot composition is `' first'×14 + ' second'×10` — identical to the parent's. The perturbation swapped which token sits at *which* recurrence; the slot's class-membership and the attractor's shape are exactly preserved. Re-absorption at the perturbation period is the strongest single-specimen signature of a stable structured attractor with within-cycle slack. (Underlying text: iterative patent-claim language about "the first/second conductive layer forming process" — the slot's "class" is the ordinal pair modifying a recursively-defined fabrication template.)
+
+- **Borderline NOPERIOD spike (1 specimen).** `48a13037` (NOPERIOD-B, `T_req` = 0.142) sits at the classifier boundary. The branch reaches `div_span = 197` (under the NOPERIOD threshold of 200 = 2 × 100). Both parent and branch enter the same period-2 `yZ` alternation sub-attractor after the spike, but anti-phase; 91% Hamming on the post-branch tail despite structural identity. The case argues for surfacing "phase-shifted re-absorption" as a sub-tag if more such specimens accumulate; for now classified re-absorbed on shape, with the anti-phase detail recorded here.
+
+### Wandering cluster (n=5)
+
+Branches that preserve the parent's period and peak-acf structure but diverge token-by-token over hundreds of positions. The interpretation: same attractor structurally, different *token instance* of the template.
+
+Notable specimens:
+
+- `edb2b7cf` (SCAFFOLD-soft, `T_req` = 0.121): period 116 → 116, peak acf 0.87 → 0.85, oscillation amplitude 0.384 → 0.399. 49% Hamming over 877 positions. The branch holds the same template-cycle period but the filler tokens drift — parent reads "I'm not sure", branch reads "I'm asking if" — same template, different filler text.
+
+- `60e599bd`, `0a52701d`, `a2cfa7d4` (SLOTTED-HARMONIC): periods 2, 5, 3 respectively, all preserved. Peak acf preserved or modestly shifted. The period-2 specimen `60e599bd` has only 22% Hamming over 248 positions, suggesting the within-period rotation has multiple stable orderings and the perturbation kicked the trajectory to a different ordering of the same attractor.
+
+- `7c66ed46` (NOPERIOD-B): div_span exceeds the NOPERIOD threshold (1013 > 200), classified wandering. No detected period in either parent or branch; the structural-similarity question stays open without per-specimen inspection.
+
+### Basin-switch cluster (n=14)
+
+Branches that change period, peak structure, or both. The modal outcome of perturbation at the principled axis. Sub-readings within the cluster:
+
+- **Counter-slot breakdown.** All 4 SLOTTED-COUNTER specimens basin-switched (`13f9cd8d` 29→7, `d24c9484` 22→5, `d2562221` 19→5, `1f812a06` 7→3). The counter mechanism — induction-head copy + increment — depends on the consecutive-integer/letter signal being present. Forcing a non-counter alt token breaks the induction, and the trajectory falls into a different basin. The new periods are short (3–7), suggesting the trajectory falls into a simpler nearby cyclic attractor rather than re-establishing the original counter at a shifted value.
+
+- **Harmonic-period instability under perturbation.** The 7 SLOTTED-HARMONIC specimens split 4 basin-switch / 3 wandering. The harmonic sub-class (introduced in the N1 observation as period-detection-aliased trajectories where multiple phase positions appear as slots) is not behaviourally uniform — the period-detection-harmonic signature is consistent across the parent trajectory but the perturbation response is not.
+
+- **SCAFFOLD near-bifurcation as period-shift driver.** `052ebc5a` (period 22 → 21, peak acf 0.98 → 0.69) — the perturbation shortened the cycle by exactly one position and softened the structural commitment. The branch is still strongly periodic but at a slightly different period. The most "near miss" basin-switch in the batch.
+
+- **Early-divergence structural weakening.** `8ea1fab2` (SCAFFOLD): only 4 token-level divergent positions (the injection + 3 trailing), yet peak acf collapses from 0.97 to 0.34 with period preserved at 25. The perturbation barely changes the surface text but dramatically unwinds the within-cycle structural coherence. This case argues for the `peak_acf` axis being load-bearing alongside the `period` axis — period-preservation alone is insufficient to call re-absorption.
+
+- **NOPERIOD-A outlier.** `c82e06a6` (`T_req` = 2.780): forced alt drove the trajectory into a clean period-2 attractor (peak acf 0.75). 4 of 5 NOPERIOD-A specimens re-absorbed; this one basin-switched. Same regime tag, same `T_req` bucket, opposite outcome. The Cluster A "memoryless baseline" framing has a 4/5 hit rate on this batch.
+
+### T_req as a sampling-strategy axis
+
+For each branch, `T_req = gap / log(9) ≈ gap / 2.197` — the temperature at which the alt-token would have probability 0.1 under a two-token softmax over (chosen, alt). The full distribution carries other mass, so this underestimates the actual T needed for `p_alt = 0.1`; but the order-of-magnitude is the right scale for "would standard stochastic sampling at this T realistically pick the alt?"
+
+Distribution across the batch: min 0.014, median 1.081, max 2.859. Buckets:
+
+| `T_req` | re-absorbed | wandering | basin-switch | total |
+|---|---:|---:|---:|---:|
+| low (≤0.15) | 2 | 2 | 3 | 7 |
+| mid (0.15..2.0) | 0 | 3 | 6 | 9 |
+| high (>2.0) | 4 | 0 | 5 | 9 |
+
+**Basin-switch occurs in every bucket** (3, 6, 5). The principled axis of lowest `gap_over_H` does not pick positions that, under realistic sampling, produce within-attractor exploration — it picks positions that, under realistic sampling, would frequently shift the trajectory to a different attractor. This is the project-distinctive empirical claim:
+
+> *At the high-uncertainty positions on context-collapsed trajectories where standard temperature sampling could realistically pick a token other than argmax, the outcome of that pick is more often a different stable attractor than within-attractor exploration.*
+
+The decoding-degeneration literature (Holtzman 2019 onward) treats temperature sampling as escape from degeneration. The data here is consistent with that *as text quality intervention* — the basin-switched trajectories do contain different text — but the dynamical reading is that the trajectory is moving from one degenerate attractor to another, not exploring within one. T modulation at high-uncertainty positions is not "letting the model breathe within a stable attractor"; it is "selecting which of several attractors the trajectory falls into."
+
+### Methodological consequences for `design-reqs.md`
+
+The C2 branching protocol's framing of the principled axis as the "leverage candidate" generator needs softening. The data says:
+
+- The axis generates *candidate positions where outcomes vary widely*, not positions of one specific behaviour ("leverage" = direct trajectory redirection).
+- Leverage is a (position, attractor) interaction. The same `gap_over_H` and `T_req` values produce opposite outcomes across regime tags.
+- The Cluster A / SLOTTED-CLASS "boring vs leverage" partition didn't survive contact with the data. Both produce re-absorption; neither produces predictable basin-switch.
+
+A `design-reqs.md` revision pass is warranted to express this in terms the data supports. The protocol's mechanics still hold (start at principled-axis positions; classify outcomes empirically); the language of "leverage candidates" should retire. The forward thread on this is parked in `ideas.md`.
+
+### Follow-ups
+
+- **Matplotlib companion to `branch_compare.py`** — H-trace overlay (parent vs branch on common time axis), position-resolved `logit_gap` and `gap_over_H` deltas, peak-structure side-by-side. Held until stdout reading saturates or a specific question wants a visual.
+- **Second batch under Gumbel-Top-k.** K plausible alts per principled-axis position instead of one. Requires the `step_distribution(...)` runner helper (aspirational in `peirce/README.md`). Particularly informative for the SLOTTED-HARMONIC bucket where outcomes were heterogeneous under a single alt — does K-fan-out collapse the heterogeneity, or amplify it?
+- **Transient-window perturbations.** All 25 branches in this batch perturb in the deep window (≥ 1024). Whether perturbation in the early transient (< 1024) redirects which attractor the trajectory enters is the design-reqs protocol's "transient leverage" question, untouched by this batch.
+- **Lower-ranked alt tokens.** Argmax-of-non-chosen reaches only rank-2. Forcing rank-K for larger K explores whether the basin landscape near each position is dense (many nearby basins reachable) or sparse (few). Especially informative on Cluster A specimens: their 4/5 re-absorption hit rate is on rank-2; does the 1/5 outlier `c82e06a6` admit basin-switch on a wider range of ranks while the other 4 stay re-absorbed at all ranks?
+- **`design-reqs.md` revision.** Parking the leverage-language softening as a parked thread before landing the revision; the revision wants more data before final wording.
+

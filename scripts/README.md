@@ -24,9 +24,8 @@ All read-only renderers iterate the `trajectories` table directly (one row per `
 
 ## Smoke tests
 
-- `smoke_engine.py` — short trajectories from BOS via top-k branching, dumps token-by-token records. Validates the engine without persistence.
 - `smoke_kv_parity.py` — parity check: `observe_trajectory` (KV-cache + prefill) vs. a local full-context reference that re-encodes history every step. Pass criterion is exact token-id identity. Per-step scalar diffs reported as informational; at fp16 they sit at ~1e-2 (fp16 reduction-order noise), at fp32 they sit at ~1e-5.
-- `smoke_store.py` — round-trip, idempotence, extension-via-prefill, short-budget shortcut, runner cache-hit, injection identity-distinction, query.
+- `smoke_store.py` — round-trip, idempotence, extension-via-prefill, short-budget shortcut, runner cache-hit, position-0 injection identity-distinction, position-N>0 injection (C2 branching path: prefix preserves parent, injection forces token, alt-field semantics at injection step, distinct trajectory_id), query.
 
 ## Running
 
@@ -51,4 +50,3 @@ The C2 branching protocol (`design-reqs.md`) extends the script set:
 
 - **Branch runs.** Per-batch scripts driving `runner.branch_observe`. First batch is ~10 branches across regime tags per the protocol; the run reads candidate positions from the C2 catalog's principled (lowest `gap_over_H`) and baseline (highest deep-window H) lists, builds branch runs using each candidate's persisted `alt_token_id` (first-batch argmax-of-non-chosen rule), persists the resulting trajectories. Cache-hits on re-run via the existing observation-identity seam.
 - **Branch comparison renderer.** A read-side renderer that puts parent and branch on common axes — token-level divergence, H-trace divergence, position-resolved `logit_gap` and `gap_over_H`. Named here; design deferred until first-batch results inform the relevant comparisons.
-- **Position-N>0 injection smoke-test.** Pre-flight before first-batch runs. Extends `smoke_engine` to exercise mid-trajectory injections (substrate-construction smoke only covers position-0). Position-N injection rides the existing `Injection` schema atom unchanged; the smoke confirms engine behaviour matches the contract.

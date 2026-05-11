@@ -12,6 +12,10 @@ Exercises:
   any inference
 - runner cache hit: re-requesting the same observation reads it from the
   store rather than re-running
+- position-N>0 injection (C2 branching path): branch from a parent
+  trajectory at mid-trajectory position, validates prefix preservation,
+  injection forcing, alt-field semantics at the injection step, and
+  identity-distinct trajectory_id
 
 Run: uv run python scripts/smoke_store.py
 """
@@ -178,8 +182,41 @@ def main() -> None:
         assert eq, f"injection round-trip failed: {diff}"
         print("  OK")
 
-        # === 7: query helpers ===
-        print("\n[7] Query observations...")
+        # === 7: position-N>0 injection (C2 branching path) ===
+        print("\n[7] Position-N>0 injection: branch from parent at mid-trajectory position...")
+        branch_position = 4
+        parent_step = obs.steps[branch_position]
+        branch_alt_id = parent_step.alt_token_id
+        traj_branch = fresh_trajectory(
+            model, [bos_id],
+            injections=(Injection(position=branch_position, chosen_id=branch_alt_id),),
+        )
+        obs_branch = observe_trajectory(model, tokenizer, traj_branch, preds(8))
+        # Branch has a distinct trajectory_id from the no-injection parent.
+        assert trajectory_hash(traj_branch) != trajectory_hash(obs.trajectory), \
+            "branch trajectory must have distinct trajectory_id from parent"
+        # Prefix [0, branch_position) is byte-identical to parent — no injection
+        # takes effect before branch_position, so deterministic argmax agrees.
+        for i in range(branch_position):
+            assert obs_branch.steps[i] == obs.steps[i], \
+                f"branch prefix divergence at step {i} (should match parent before injection)"
+        # Step at branch_position has chosen_id == the injected alt_id.
+        assert obs_branch.steps[branch_position].token_id == branch_alt_id, \
+            f"branch step at injection position should be alt_id={branch_alt_id}, " \
+            f"got {obs_branch.steps[branch_position].token_id}"
+        # Alt at injection step is the natural argmax (= parent's chosen at that position).
+        assert obs_branch.steps[branch_position].alt_token_id == parent_step.token_id, \
+            "branch alt at injection step should be parent's natural argmax"
+        # Round-trip through the store.
+        oid_branch = write_observation(conn, obs_branch)
+        obs_branch_round = read_observation(conn, oid_branch)
+        eq, diff = _observations_equal(obs_branch, obs_branch_round)
+        assert eq, f"branch round-trip failed: {diff}"
+        print(f"  OK — branched at position {branch_position}, "
+              f"forced token_id={branch_alt_id} (parent's rank-2 at that step)")
+
+        # === 8: query helpers ===
+        print("\n[8] Query observations...")
         all_oids = list(query_observations(conn))
         budget_oids = list(query_observations(conn, terminal_event="budget_cap"))
         nonexistent = list(query_observations(conn, terminal_event="nope"))

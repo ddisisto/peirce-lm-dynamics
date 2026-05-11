@@ -25,6 +25,7 @@ env/
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Data artifacts (kernel sweeps, trajectory records, model caches)
 # Project artifacts live outside the repo by default; uncomment / extend as needed

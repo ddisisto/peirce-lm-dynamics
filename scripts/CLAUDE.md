@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 2026-05-11 — first_batch_branches lands as concrete Branch runs entry)*
+@README.md *(updated 2026-05-11 — branch_compare lands; branching surface concrete end-to-end)*
 
 ## Standards within this path
 

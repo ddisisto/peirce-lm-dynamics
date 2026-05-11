@@ -32,6 +32,7 @@ from .records import (
 from .store import (
     find_observation,
     find_trajectory,
+    read_trajectory,
     trajectory_hash_from_parts,
     write_observation,
 )
@@ -104,3 +105,64 @@ def observe(
     )
     write_observation(store, obs)
     return obs
+
+
+def branch_observe(
+    store,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    parent_trajectory_id: str,
+    branch_position: int,
+    alt_token_id: int,
+    predicates: Sequence[Predicate],
+    inference_strategy: InferenceStrategy | None = None,
+    model_revision: str | None = None,
+) -> Observation:
+    """C2 branching protocol primitive: branch a parent at branch_position with alt_token_id.
+
+    Reads the parent trajectory from the store, appends
+    `Injection(branch_position, alt_token_id)` to its injection tuple, and
+    delegates to `observe`. The branch trajectory's `trajectory_id` is fresh
+    by hash construction over the augmented injection tuple; the path through
+    `observe → engine → store` is unchanged. Branch trajectories cache-hit on
+    re-run via the standard observation-identity seam.
+
+    `branch_position` must be >= 1. Position 0 is the initial-condition
+    selection role for the `Injection` schema atom (substrate construction);
+    `branch_observe` is the mid-trajectory perturbation primitive only.
+    To create an alternate initial condition, call `observe` directly with
+    the desired position-0 injection.
+
+    `branch_position` must not collide with an existing injection on the
+    parent at the same position. The engine resolves duplicate-position
+    injections via dict semantics (last write wins), which would silently
+    overwrite the parent's injection — rejected here explicitly.
+
+    Raises KeyError if `parent_trajectory_id` is not in the store.
+    Raises ValueError on the validation conditions above.
+    """
+    if branch_position < 1:
+        raise ValueError(
+            f"branch_position must be >= 1 (got {branch_position}); "
+            "position 0 is initial-condition selection — call observe() directly"
+        )
+    parent = read_trajectory(store, parent_trajectory_id)
+    existing_positions = {inj.position for inj in parent.injections}
+    if branch_position in existing_positions:
+        raise ValueError(
+            f"branch_position {branch_position} collides with an existing "
+            f"injection on parent {parent_trajectory_id} at the same position"
+        )
+    new_injections = (
+        *parent.injections,
+        Injection(position=branch_position, chosen_id=alt_token_id),
+    )
+    return observe(
+        store, model, tokenizer,
+        initial_ids=parent.initial_ids,
+        predicates=predicates,
+        injections=new_injections,
+        inference_strategy=inference_strategy,
+        model_revision=model_revision,
+    )

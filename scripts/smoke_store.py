@@ -16,6 +16,10 @@ Exercises:
   trajectory at mid-trajectory position, validates prefix preservation,
   injection forcing, alt-field semantics at the injection step, and
   identity-distinct trajectory_id
+- branch_observe runner wrapper: end-to-end C2 branching primitive
+  validation (parent lookup, injection-tuple construction, cache hit
+  on re-call, ValueError on branch_position<1 and collision, KeyError
+  on missing parent)
 
 Run: uv run python scripts/smoke_store.py
 """
@@ -38,7 +42,7 @@ from peirce.predicates import (
     window_cap_predicate,
 )
 from peirce.records import Injection
-from peirce.runner import observe
+from peirce.runner import branch_observe, observe
 from peirce.store import (
     find_trajectory,
     observation_hash,
@@ -215,8 +219,91 @@ def main() -> None:
         print(f"  OK — branched at position {branch_position}, "
               f"forced token_id={branch_alt_id} (parent's rank-2 at that step)")
 
-        # === 8: query helpers ===
-        print("\n[8] Query observations...")
+        # === 8: branch_observe (C2 branching protocol primitive) ===
+        print("\n[8] branch_observe: C2 branching protocol primitive over the runner...")
+        parent_tid = trajectory_hash(obs.trajectory)
+        br_position = 3
+        br_alt_id = obs.steps[br_position].alt_token_id
+
+        # Happy path: branch from no-injection parent at position 3.
+        obs_br = branch_observe(
+            conn, model, tokenizer,
+            parent_trajectory_id=parent_tid,
+            branch_position=br_position,
+            alt_token_id=br_alt_id,
+            predicates=preds(8),
+        )
+        assert trajectory_hash(obs_br.trajectory) != parent_tid, \
+            "branch_observe must produce distinct trajectory_id from parent"
+        for i in range(br_position):
+            assert obs_br.steps[i] == obs.steps[i], \
+                f"branch_observe prefix divergence at step {i}"
+        assert obs_br.steps[br_position].token_id == br_alt_id, \
+            "branch_observe must force alt_token_id at branch_position"
+
+        # Cache hit on re-call: same args → same observation, fast.
+        t0 = time.perf_counter()
+        obs_br2 = branch_observe(
+            conn, model, tokenizer,
+            parent_trajectory_id=parent_tid,
+            branch_position=br_position,
+            alt_token_id=br_alt_id,
+            predicates=preds(8),
+        )
+        elapsed = time.perf_counter() - t0
+        assert observation_hash(obs_br2) == observation_hash(obs_br), \
+            "branch_observe re-call should return the same observation"
+        assert elapsed < 0.5, f"branch_observe cache hit too slow ({elapsed*1000:.1f}ms)"
+
+        # Validation: branch_position < 1 is rejected (position-0 is the
+        # initial-condition-selection role, not mid-trajectory perturbation).
+        try:
+            branch_observe(
+                conn, model, tokenizer,
+                parent_trajectory_id=parent_tid,
+                branch_position=0,
+                alt_token_id=br_alt_id,
+                predicates=preds(8),
+            )
+            raise AssertionError("branch_position=0 should have raised ValueError")
+        except ValueError as e:
+            assert "branch_position must be >= 1" in str(e), \
+                f"unexpected ValueError message: {e}"
+
+        # Validation: collision with existing injection. obs_br itself has an
+        # injection at br_position; branching obs_br at br_position again must
+        # be rejected to prevent silent overwrite.
+        obs_br_tid = trajectory_hash(obs_br.trajectory)
+        try:
+            branch_observe(
+                conn, model, tokenizer,
+                parent_trajectory_id=obs_br_tid,
+                branch_position=br_position,
+                alt_token_id=br_alt_id,
+                predicates=preds(8),
+            )
+            raise AssertionError("position collision should have raised ValueError")
+        except ValueError as e:
+            assert "collides" in str(e), f"unexpected ValueError message: {e}"
+
+        # Validation: bogus parent_trajectory_id raises KeyError.
+        try:
+            branch_observe(
+                conn, model, tokenizer,
+                parent_trajectory_id="0" * 32,
+                branch_position=br_position,
+                alt_token_id=br_alt_id,
+                predicates=preds(8),
+            )
+            raise AssertionError("bogus parent_trajectory_id should have raised KeyError")
+        except KeyError:
+            pass
+
+        print(f"  OK — branched at position {br_position}, cache hit "
+              f"in {elapsed*1000:.1f}ms, all validation guards fire correctly")
+
+        # === 9: query helpers ===
+        print("\n[9] Query observations...")
         all_oids = list(query_observations(conn))
         budget_oids = list(query_observations(conn, terminal_event="budget_cap"))
         nonexistent = list(query_observations(conn, terminal_event="nope"))

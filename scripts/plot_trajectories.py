@@ -1,14 +1,11 @@
 """Matplotlib renderings of the persisted full-depth substrate.
 
-Read-only over `data/peirce.db`. Loads the 100 fp16 selection-bias
-observations (predicate set: eos + basin_capture(K=4, cycle_window=256,
-max_period=32) + window_cap), each backed by a trajectory extended to
-L_arch=2047 by full_depth_extension. The v1 terminal-event split
-(candidate-basin vs window_cap) is *not* used as a population axis here
-— per the depth-collapse finding, that split tracks where the v1
-predicate happened to fire, not anything intrinsic to the trajectories
-themselves. The shape of collapse is what the data does carry, and it
-is what these plots try to surface.
+Read-only over `data/peirce.db`. Iterates the 100 fp16 trajectories in
+the `trajectories` table directly, each extended to L_arch=2047 by
+full_depth_extension. Per-trajectory shape metrics are computed from the
+deep window [DEEP_START, end) and projected across a handful of figures
+under `data/plots/`. The shape of collapse is what the data carries, and
+it is what these plots try to surface.
 
 Per-trajectory shape metrics, all population-blind:
 
@@ -48,7 +45,6 @@ Run via: uv run python scripts/plot_trajectories.py
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,12 +61,8 @@ from peirce.shape import (
     dominant_period,
     entropy_onset,
 )
-from peirce.store import open_store, read_observation
+from peirce.store import open_store, read_trajectory
 
-
-# Predicate signature that identifies the canonical fp16 selection-bias run.
-SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
-SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
 SMOOTH_WINDOW = 16
 
@@ -79,28 +71,16 @@ OUT_DIR = Path("data/plots")
 
 @dataclass(frozen=True)
 class Specimen:
-    oid: str
+    tid: str
     entropy: np.ndarray   # (n_pos,)
     logit_gap: np.ndarray
     tokens: str
-    observed_length: int  # v1 truncation marker (kept for annotation only)
     onset: int | None
     floor_H: float
     floor_gap: float
     osc_amp: float
     period: int | None
     gap_over_H: float
-
-
-def is_selection_bias_obs(predicates_json: str) -> bool:
-    preds = json.loads(predicates_json)
-    names = {p["name"] for p in preds}
-    if names != SELBIAS_PRED_NAMES:
-        return False
-    for p in preds:
-        if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
-            return False
-    return True
 
 
 def smooth(x: np.ndarray, window: int = SMOOTH_WINDOW) -> np.ndarray:
@@ -130,16 +110,16 @@ def preview_text(text: str, width: int) -> str:
 
 def load_specimens() -> list[Specimen]:
     conn = open_store(default_store_path())
-    rows = conn.execute(
-        "SELECT observation_id, predicates_json, terminal_event, observed_length FROM observations"
-    ).fetchall()
+    trajectory_ids = [
+        tid for (tid,) in conn.execute(
+            "SELECT trajectory_id FROM trajectories ORDER BY trajectory_id"
+        ).fetchall()
+    ]
 
     specimens: list[Specimen] = []
-    for oid, preds_json, _terminal, observed_length in rows:
-        if not is_selection_bias_obs(preds_json):
-            continue
-        obs = read_observation(conn, oid)
-        steps = obs.trajectory.steps
+    for tid in trajectory_ids:
+        traj = read_trajectory(conn, tid)
+        steps = traj.steps
         if len(steps) < DEEP_START + 16:
             # need a deep window to characterise; substrate is full-depth so
             # this should not fire, but guard anyway.
@@ -156,11 +136,10 @@ def load_specimens() -> list[Specimen]:
         period = dominant_period(deep_H)
         gap_over_H = floor_gap / max(floor_H, 1e-4)
         specimens.append(Specimen(
-            oid=oid,
+            tid=tid,
             entropy=entropy,
             logit_gap=gap,
             tokens=tokens,
-            observed_length=observed_length,
             onset=onset,
             floor_H=floor_H,
             floor_gap=floor_gap,
@@ -190,7 +169,7 @@ def fig_aggregate(specimens: list[Specimen], out_path: Path) -> None:
     fig, axes = plt.subplots(3, 2, figsize=(14, 13), constrained_layout=True)
     fig.suptitle(
         "fp16 top-100-from-BOS substrate — full-depth (L_arch=2047), population-blind\n"
-        "no v1 / predicate split: shape of collapse is the unit",
+        "shape of collapse is the unit",
         fontsize=12,
     )
 
@@ -437,12 +416,12 @@ def fig_outliers(specimens: list[Specimen], out_path: Path) -> None:
     seen: set[str] = set()
     unique: list[tuple[Specimen, str]] = []
     for s, lbl in selected:
-        key = s.oid
+        key = s.tid
         if key in seen:
             unique[-1] = (unique[-1][0], unique[-1][1] + " · " + lbl)
             # if the duplicate is non-adjacent we still want to merge:
             for i, (s_existing, lbl_existing) in enumerate(unique):
-                if s_existing.oid == key:
+                if s_existing.tid == key:
                     unique[i] = (s_existing,
                                  lbl_existing if lbl in lbl_existing
                                  else lbl_existing + " · " + lbl)
@@ -485,7 +464,7 @@ def fig_outliers(specimens: list[Specimen], out_path: Path) -> None:
 
         tail = preview_text(s.tokens[-300:], 200)
         ax.set_title(
-            f"{label}  —  {s.oid[:8]}  "
+            f"{label}  —  {s.tid[:8]}  "
             f"[floor_H={s.floor_H:.3f}, floor_gap={s.floor_gap:.2f}, "
             f"period={s.period}, gap/H={s.gap_over_H:.1f}]\n"
             f"tail: {tail}",
@@ -539,7 +518,7 @@ def fig_grid(specimens: list[Specimen], out_path: Path) -> None:
         ax.set_ylim(-0.05, 3.0)
         ax.set_xlim(0, 2050)
         ax.tick_params(labelsize=5)
-        title = s.oid[:6]
+        title = s.tid[:6]
         if s.period is not None:
             title += f"  T={s.period}"
         ax.set_title(title, fontsize=6)
@@ -562,7 +541,7 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     specimens = load_specimens()
-    print(f"Selection-bias observations loaded: {len(specimens)}")
+    print(f"Trajectories loaded: {len(specimens)}")
     print(f"  never-onset (entropy never holds below {ONSET_THRESHOLD} for "
           f"{ONSET_SMOOTHING} steps): {sum(1 for s in specimens if s.onset is None)}")
     print(f"  no-period (deep-window variance too low or no peak): "

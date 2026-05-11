@@ -86,6 +86,17 @@ class Injection:
     the model produces. T>0 sample-type non-argmax events (when those
     land) belong to observations rather than trajectories — they are
     outcomes of a stochastic inference run, not intents.
+
+    The schema atom is mechanism-faithful (force this token at this
+    position) and does not encode the experimenter's role for the
+    injection. At the protocol layer the role distinction matters:
+    injections at position 0 serve as initial-condition selection from
+    a fixed prefix (the substrate's 100 BOS-branch trajectories are
+    distinguished this way); injections at position N>0 serve as
+    mid-trajectory perturbations (the C2 branching mode). Both map
+    onto foundation vocabulary: position-0 selects an initial
+    condition; position-N>0 is the foundation's "injection of specific
+    tokens" sub-category of perturbation.
     """
     position: int
     chosen_id: int

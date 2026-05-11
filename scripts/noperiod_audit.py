@@ -25,41 +25,25 @@ Per NOPERIOD specimen, reports:
 
 Plus deep-window H, gap, gap_over_H quartile summaries for orientation.
 
-Read-only over `data/peirce.db`. Same selection-bias filter as
-`shape_catalog.py`. No model load, no inference.
+Read-only over `data/peirce.db`. Iterates the `trajectories` table
+directly. No model load, no inference.
 
 Run via: uv run python scripts/noperiod_audit.py
 """
 from __future__ import annotations
 
-import json
-
 import numpy as np
 
 from peirce.runner import default_store_path
 from peirce.shape import DEEP_START, LAG_MAX, LAG_MIN, PEAK_MIN, acf_peaks, dominant_period
-from peirce.store import open_store, read_observation
+from peirce.store import open_store, read_trajectory
 
-
-SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
-SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
 GAP_OVER_H_EPS = 1e-4
 WIDE_LAG_MAX = 256
 RELAXED_PEAK_MINS = (0.20, 0.10)
 TOP_K_RAW_ACF = 5
 NOISE_FLOOR_STD = 1e-4   # mirrors peirce.shape's private constant
-
-
-def is_selection_bias_obs(predicates_json: str) -> bool:
-    preds = json.loads(predicates_json)
-    names = {p["name"] for p in preds}
-    if names != SELBIAS_PRED_NAMES:
-        return False
-    for p in preds:
-        if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
-            return False
-    return True
 
 
 def normalized_acf(x: np.ndarray, max_lag: int) -> np.ndarray | None:
@@ -105,42 +89,42 @@ def format_peaks(peaks: list[tuple[int, float]]) -> str:
 
 def main() -> None:
     conn = open_store(default_store_path())
-    rows = conn.execute(
-        "SELECT observation_id, predicates_json FROM observations"
-    ).fetchall()
+    trajectory_ids = [
+        tid for (tid,) in conn.execute(
+            "SELECT trajectory_id FROM trajectories ORDER BY trajectory_id"
+        ).fetchall()
+    ]
 
-    noperiod_oids: list[str] = []
+    noperiod_tids: list[str] = []
     h_traces: dict[str, np.ndarray] = {}
     gap_traces: dict[str, np.ndarray] = {}
 
-    for oid, preds_json in rows:
-        if not is_selection_bias_obs(preds_json):
-            continue
-        obs = read_observation(conn, oid)
-        steps = obs.trajectory.steps
+    for tid in trajectory_ids:
+        traj = read_trajectory(conn, tid)
+        steps = traj.steps
         if len(steps) < DEEP_START + 256:
             continue
         deep = steps[DEEP_START:]
         H = np.fromiter((s.entropy for s in deep), dtype=np.float32)
         gap = np.fromiter((s.logit_gap for s in deep), dtype=np.float32)
         if dominant_period(H) is None:
-            noperiod_oids.append(oid)
-            h_traces[oid] = H
-            gap_traces[oid] = gap
+            noperiod_tids.append(tid)
+            h_traces[tid] = H
+            gap_traces[tid] = gap
 
     conn.close()
 
-    print(f"NOPERIOD specimen audit — {len(noperiod_oids)} trajectories under default convention")
+    print(f"NOPERIOD specimen audit — {len(noperiod_tids)} trajectories under default convention")
     print(f"defaults:    PEAK_MIN={PEAK_MIN}, lag ∈ [{LAG_MIN}, {LAG_MAX}], deep window [{DEEP_START}, end)")
     print(f"audit knobs: relaxed PEAK_MIN ∈ {RELAXED_PEAK_MINS}, wide LAG_MAX={WIDE_LAG_MAX}")
     print()
 
-    for oid in noperiod_oids:
-        H = h_traces[oid]
-        gap = gap_traces[oid]
+    for tid in noperiod_tids:
+        H = h_traces[tid]
+        gap = gap_traces[tid]
         gap_over_H_step = gap / np.maximum(H, GAP_OVER_H_EPS)
 
-        print(f"--- {oid[:8]} ({oid}) ---")
+        print(f"--- {tid[:8]} ({tid}) ---")
         print(f"   deep H:          {format_quartile(quartile_summary(H))}")
         print(f"   deep gap:        {format_quartile(quartile_summary(gap), '.3f')}")
         print(f"   deep gap_over_H: {format_quartile(quartile_summary(gap_over_H_step), '.1f')}")

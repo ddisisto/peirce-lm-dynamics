@@ -1,9 +1,9 @@
 """Phase-aware chosen-token analysis — Cycle-2 forward-sequence move N1.
 
-Read-only over `data/peirce.db`. For each of the 100 fp16 selection-bias
-observations whose deep-window entropy has a detectable cycle period,
-partition the deep window by phase position and compute chosen-token
-entropy across recurrences at each phase.
+Read-only over `data/peirce.db`. For each of the 100 fp16 trajectories
+whose deep-window entropy has a detectable cycle period, partition the
+deep window by phase position and compute chosen-token entropy across
+recurrences at each phase.
 
 Phases whose chosen-token Shannon entropy is above ε are *slots*: the
 chosen token rotates across recurrences. The empirical alt-token
@@ -41,32 +41,17 @@ Run via: uv run python scripts/phase_aware_chosen.py
 """
 from __future__ import annotations
 
-import json
 from collections import Counter
 
 import numpy as np
 
 from peirce.runner import default_store_path
 from peirce.shape import DEEP_START, LAG_MAX, LAG_MIN, PEAK_MIN, dominant_period
-from peirce.store import open_store, read_observation
+from peirce.store import open_store, read_trajectory
 
-
-SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
-SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
 SLOT_H_EPS = 1e-3            # chosen-token H above this counts as non-degenerate
 TOP_K_SLOT_DIST = 8          # how many tokens to print per slot distribution
-
-
-def is_selection_bias_obs(predicates_json: str) -> bool:
-    preds = json.loads(predicates_json)
-    names = {p["name"] for p in preds}
-    if names != SELBIAS_PRED_NAMES:
-        return False
-    for p in preds:
-        if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
-            return False
-    return True
 
 
 def shannon_H_nats(counter: Counter) -> float:
@@ -101,16 +86,16 @@ def format_distribution(counter: Counter, top_k: int = TOP_K_SLOT_DIST) -> str:
 
 def main() -> None:
     conn = open_store(default_store_path())
-    rows = conn.execute(
-        "SELECT observation_id, predicates_json FROM observations"
-    ).fetchall()
+    trajectory_ids = [
+        tid for (tid,) in conn.execute(
+            "SELECT trajectory_id FROM trajectories ORDER BY trajectory_id"
+        ).fetchall()
+    ]
 
     items: list[dict] = []
-    for oid, preds_json in rows:
-        if not is_selection_bias_obs(preds_json):
-            continue
-        obs = read_observation(conn, oid)
-        steps = obs.trajectory.steps
+    for tid in trajectory_ids:
+        traj = read_trajectory(conn, tid)
+        steps = traj.steps
         if len(steps) < DEEP_START + LAG_MAX * 2:
             continue
         deep = steps[DEEP_START:]
@@ -120,7 +105,7 @@ def main() -> None:
         osc_amp = float(H.std())
 
         item: dict = {
-            "oid": oid,
+            "tid": tid,
             "period": period,
             "floor_H": floor_H,
             "osc_amp": osc_amp,
@@ -167,7 +152,7 @@ def main() -> None:
     n_with_slots = sum(1 for it in items if it["num_slots"] > 0)
     n_scaffold_only = n_total - n_no_period - n_with_slots
 
-    print(f"selection-bias observations: {n_total}")
+    print(f"trajectories: {n_total}")
     print(f"deep window: [{DEEP_START}, end)")
     print(f"period detection: lag ∈ [{LAG_MIN}, {LAG_MAX}], peak ≥ {PEAK_MIN}")
     print(f"slot threshold: chosen-token H > {SLOT_H_EPS} nats")
@@ -181,7 +166,7 @@ def main() -> None:
     for it in items:
         if it["period"] is None:
             print(
-                f"[NOPERIOD ]  {it['oid'][:8]}  "
+                f"[NOPERIOD ]  {it['tid'][:8]}  "
                 f"floor_H={it['floor_H']:.4f}  osc_amp={it['osc_amp']:.4f}  "
                 f"(deep-window variance below noise or no autocorrelation peak)"
             )
@@ -191,7 +176,7 @@ def main() -> None:
         else:
             tag = "SLOTTED  "
         print(
-            f"[{tag}]  {it['oid'][:8]}  period={it['period']:3d}  "
+            f"[{tag}]  {it['tid'][:8]}  period={it['period']:3d}  "
             f"floor_H={it['floor_H']:.4f}  osc_amp={it['osc_amp']:.4f}  "
             f"slots={it['num_slots']}/{it['num_phases']}"
         )

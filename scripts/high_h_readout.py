@@ -1,8 +1,8 @@
 """High-H readout — what was the model attending to, where?
 
-Read-only over `data/peirce.db`. For each of the 100 fp16 selection-bias
-observations, in the deep window [DEEP_START, end), pick the top-N
-highest-entropy positions and dump for each:
+Read-only over `data/peirce.db`. For each of the 100 fp16 trajectories,
+in the deep window [DEEP_START, end), pick the top-N highest-entropy
+positions and dump for each:
 
   (absolute position, H, gap, chosen token, alt token, alt_prob,
    plus a few tokens of context on each side).
@@ -24,16 +24,11 @@ Run via: uv run python scripts/high_h_readout.py
 """
 from __future__ import annotations
 
-import json
-
 import numpy as np
 
 from peirce.runner import default_store_path
-from peirce.store import open_store, read_observation
+from peirce.store import open_store, read_trajectory
 
-
-SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
-SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
 DEEP_START = 1024
 TOP_N = 5
@@ -42,33 +37,22 @@ CONTEXT_RIGHT = 6
 STRUCTURED_THRESHOLD = 0.10  # top_H above this counts as "real slot structure"
 
 
-def is_selection_bias_obs(predicates_json: str) -> bool:
-    preds = json.loads(predicates_json)
-    names = {p["name"] for p in preds}
-    if names != SELBIAS_PRED_NAMES:
-        return False
-    for p in preds:
-        if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
-            return False
-    return True
-
-
 def render_token(t: str) -> str:
     return t.replace("\n", "\\n").replace("\t", "\\t")
 
 
 def main() -> None:
     conn = open_store(default_store_path())
-    rows = conn.execute(
-        "SELECT observation_id, predicates_json FROM observations"
-    ).fetchall()
+    trajectory_ids = [
+        tid for (tid,) in conn.execute(
+            "SELECT trajectory_id FROM trajectories ORDER BY trajectory_id"
+        ).fetchall()
+    ]
 
     items: list[dict] = []
-    for oid, preds_json in rows:
-        if not is_selection_bias_obs(preds_json):
-            continue
-        obs = read_observation(conn, oid)
-        steps = obs.trajectory.steps
+    for tid in trajectory_ids:
+        traj = read_trajectory(conn, tid)
+        steps = traj.steps
         if len(steps) < DEEP_START + 16:
             continue
         deep = steps[DEEP_START:]
@@ -82,7 +66,7 @@ def main() -> None:
         # type sampled multiple times).
         top_idx = [int(i) for i in np.argsort(-H)[:TOP_N]]
         items.append({
-            "oid": oid,
+            "tid": tid,
             "osc_amp": osc_amp,
             "floor_H": floor_H,
             "deep": deep,
@@ -98,7 +82,7 @@ def main() -> None:
         and any(it["deep"][i].entropy >= STRUCTURED_THRESHOLD for i in it["top_idx"])
     )
 
-    print(f"selection-bias observations: {len(items)}")
+    print(f"trajectories: {len(items)}")
     print(f"deep window: [{DEEP_START}, end)")
     print(f"top-{TOP_N} highest-H positions per trajectory")
     print(f"context: {CONTEXT_LEFT} tokens before / {CONTEXT_RIGHT} after")
@@ -106,13 +90,13 @@ def main() -> None:
     print()
 
     for it in items:
-        oid = it["oid"]
+        tid = it["tid"]
         deep = it["deep"]
         top_idx = it["top_idx"]
         top_H_max = max(deep[i].entropy for i in top_idx)
         tag = "STRUCTURED" if top_H_max >= STRUCTURED_THRESHOLD else "PINNED    "
         print(
-            f"[{tag}]  {oid[:8]}  osc_amp={it['osc_amp']:.4f}  "
+            f"[{tag}]  {tid[:8]}  osc_amp={it['osc_amp']:.4f}  "
             f"floor_H={it['floor_H']:.4f}  top_H={top_H_max:.3f}"
         )
         # Print top positions in chronological order so the cycle phase

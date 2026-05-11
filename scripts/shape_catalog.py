@@ -52,18 +52,14 @@ Run via: uv run python scripts/shape_catalog.py
 """
 from __future__ import annotations
 
-import json
 from collections import Counter
 
 import numpy as np
 
 from peirce.runner import default_store_path
 from peirce.shape import DEEP_START, LAG_MAX, LAG_MIN, PEAK_MIN, acf_peaks, dominant_period
-from peirce.store import open_store, read_observation
+from peirce.store import open_store, read_trajectory
 
-
-SELBIAS_PRED_NAMES = {"eos", "basin_capture", "window_cap"}
-SELBIAS_BASIN_PARAMS = {"max_period": 32, "cycle_window": 256, "min_repetitions": 4}
 
 SLOT_H_EPS = 1e-3
 TOP_K_SLOT_DIST = 8
@@ -71,17 +67,6 @@ TOP_K_CANDIDATE = 20
 COUNTER_MATCH_THRESHOLD = 0.75
 GAP_OVER_H_EPS = 1e-4
 SCAFFOLD_PHASES_TO_SHOW = 3   # top-K extreme phases to print per SCAFFOLD specimen
-
-
-def is_selection_bias_obs(predicates_json: str) -> bool:
-    preds = json.loads(predicates_json)
-    names = {p["name"] for p in preds}
-    if names != SELBIAS_PRED_NAMES:
-        return False
-    for p in preds:
-        if p["name"] == "basin_capture" and p["params"] != SELBIAS_BASIN_PARAMS:
-            return False
-    return True
 
 
 def shannon_H_nats(counter: Counter) -> float:
@@ -199,19 +184,19 @@ def format_quartile(q: dict, fmt: str = ".3f") -> str:
 
 def main() -> None:
     conn = open_store(default_store_path())
-    rows = conn.execute(
-        "SELECT observation_id, predicates_json FROM observations"
-    ).fetchall()
+    trajectory_ids = [
+        tid for (tid,) in conn.execute(
+            "SELECT trajectory_id FROM trajectories ORDER BY trajectory_id"
+        ).fetchall()
+    ]
 
     items: list[dict] = []
     candidates: list[dict] = []   # all deep-window positions across all trajectories
     h_baseline: list[dict] = []   # same, for highest-H baseline
 
-    for oid, preds_json in rows:
-        if not is_selection_bias_obs(preds_json):
-            continue
-        obs = read_observation(conn, oid)
-        steps = obs.trajectory.steps
+    for tid in trajectory_ids:
+        traj = read_trajectory(conn, tid)
+        steps = traj.steps
         if len(steps) < DEEP_START + 256:
             continue
         deep = steps[DEEP_START:]
@@ -227,7 +212,7 @@ def main() -> None:
         gap_over_H = floor_gap / max(floor_H, GAP_OVER_H_EPS)
 
         item: dict = {
-            "oid": oid,
+            "tid": tid,
             "peaks": peaks,
             "period": period,
             "floor_H": floor_H,
@@ -304,7 +289,7 @@ def main() -> None:
         for k, step in enumerate(deep):
             abs_idx = DEEP_START + k
             cand = {
-                "oid": oid,
+                "tid": tid,
                 "step_idx": abs_idx,
                 "chosen": step.token,
                 "alt": step.alt_token,
@@ -335,7 +320,7 @@ def main() -> None:
     n_total = len(items)
 
     # ---- header ----
-    print(f"shape catalog under v0.2 vocabulary — {n_total} fp16 selection-bias trajectories")
+    print(f"shape catalog under v0.2 vocabulary — {n_total} trajectories")
     print(f"deep window: [{DEEP_START}, end)")
     print()
     print("measurements (underlying):")
@@ -363,10 +348,10 @@ def main() -> None:
 
     # ---- per-trajectory rows ----
     for it in items:
-        oid_short = it["oid"][:8]
+        tid_short = it["tid"][:8]
         peaks_str = format_peaks(it["peaks"])
         if it["tag"] == "NOPERIOD":
-            print(f"[{it['tag']:24s}]  {oid_short}  peaks={peaks_str}  "
+            print(f"[{it['tag']:24s}]  {tid_short}  peaks={peaks_str}  "
                   f"floor_H={it['floor_H']:.4f}  floor_gap={it['floor_gap']:.3f}  "
                   f"gap_over_H={it['gap_over_H']:.1f}  osc_amp={it['osc_amp']:.4f}")
             ns = it["noperiod_stats"]
@@ -377,7 +362,7 @@ def main() -> None:
             continue
 
         period = it["period"]
-        print(f"[{it['tag']:24s}]  {oid_short}  period={period:3d}  peaks={peaks_str}  "
+        print(f"[{it['tag']:24s}]  {tid_short}  period={period:3d}  peaks={peaks_str}  "
               f"floor_H={it['floor_H']:.4f}  floor_gap={it['floor_gap']:.3f}  "
               f"gap_over_H={it['gap_over_H']:.1f}  osc_amp={it['osc_amp']:.4f}  "
               f"slots={len(it['slots'])}/{it['num_phases']}")
@@ -417,7 +402,7 @@ def main() -> None:
           f"(principled N2 candidates):")
     print("=" * 78)
     for c in candidates[:TOP_K_CANDIDATE]:
-        print(f"   {c['oid'][:8]}  step={c['step_idx']:5d}  "
+        print(f"   {c['tid'][:8]}  step={c['step_idx']:5d}  "
               f"H={c['H']:.4f}  gap={c['gap']:.3f}  gap_over_H={c['gap_over_H']:.1f}  "
               f"chosen={render_token(c['chosen'])!r}  alt={render_token(c['alt'])!r}")
     print()
@@ -425,7 +410,7 @@ def main() -> None:
     print(f"Top-{TOP_K_CANDIDATE} candidate positions by highest H (baseline):")
     print("=" * 78)
     for c in h_baseline[:TOP_K_CANDIDATE]:
-        print(f"   {c['oid'][:8]}  step={c['step_idx']:5d}  "
+        print(f"   {c['tid'][:8]}  step={c['step_idx']:5d}  "
               f"H={c['H']:.4f}  gap={c['gap']:.3f}  gap_over_H={c['gap_over_H']:.1f}  "
               f"chosen={render_token(c['chosen'])!r}  alt={render_token(c['alt'])!r}")
 

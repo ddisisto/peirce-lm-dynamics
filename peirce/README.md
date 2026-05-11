@@ -39,3 +39,12 @@ Consequence: re-running a script is idempotent. Trajectories are extended (KV pr
 ## Inference
 
 Currently always `name="hard_cap_t0"`. T>0 sampling and sliding-window variants will populate the `params` dict on `InferenceStrategy` and add per-step placement-event records on the observation side (sampling deviations) rather than the trajectory side (which carries intent only — initial_ids + injections).
+
+## Aspirational — C2 branching surface
+
+The C2 branching protocol (`design-reqs.md`) extends the runner module with two operations, neither of which violates the existing module seams:
+
+- **`branch_observe(store, model, tokenizer, parent_trajectory_id, branch_position, alt_token_id, predicates, ...)`** — loads the parent's `injections`, appends `Injection(branch_position, alt_token_id)`, and delegates to `observe`. Produces a fresh `trajectory_id` by hash; the path through `runner.observe → engine → store` is unchanged. Branch trajectories cache-hit on re-run via the existing observation-identity seam.
+- **`step_distribution(store, model, tokenizer, trajectory_id, position, *, top_k=...)`** — recovers the model's distribution at a step of an existing trajectory. Needed for second-batch Gumbel-Top-k alt-selection, since persisted `StepRecord`s carry chosen + alt + entropy + logit_gap but not the full top-K. Single forward pass through the prefix via KV-prefill; result is returned, not persisted. (A future schema extension could persist top-K around branch points if analysis demands it; deferred until empirical questions warrant it.)
+
+The inference strategy at branch-time remains `hard_cap_t0`. Alt-token selection — whether argmax-of-non-chosen (read from persisted `StepRecord.alt_token_id`) or Gumbel-Top-k (sampled from `step_distribution` output) — is a script-side decision, not an inference-strategy parameter; at branch-time the chosen alt is just another `Injection`.

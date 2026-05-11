@@ -67,6 +67,39 @@ Cycle 2 holds the trunk read-only and works as **in-fill via branching**. The C1
 
 The forward sequence of Cycle-2 moves is carried inline in `CLAUDE.md` rather than this document, because it shifts faster than the substrate contract and benefits from being in primary context for every session.
 
+## C2 branching protocol
+
+The first move of Cycle-2 inference work is **alternate-path continuation**: branch off existing substrate trajectories at selected positions with selected alternate tokens, extend under the same hard-cap T=0 self-conditioning, and read the resulting paths against their parents.
+
+**Invocation primitive.** A branch run is parameterised by `(parent_trajectory_id, branch_position, alt_token_id)`. The new trajectory's `injections` tuple is the parent's plus `Injection(position=branch_position, chosen_id=alt_token_id)`; the resulting `trajectory_id` is fresh by hash construction. The mid-trajectory `Injection` (position N>0) is foundation-vocabulary "injection of specific tokens" — a sub-category of perturbation — and rides on the existing `Injection` schema atom unchanged; no engine or schema changes are required. A position-N>0 injection smoke-test is the natural pre-flight before first-batch runs.
+
+**Schema decision.** First-batch storage is **B1** — full prefix duplication. The branch trajectory holds its own `trajectory_steps` rows from position 0; identity is clean by hash. Re-assessment to B2 (nullable `parent_trajectory_id` + `branch_position` columns for queryability) or B3 (B2 + prefix-shared steps for storage) is deferred until first-batch results show branching scale. At ~10 branches × ~2k thin records storage is small-MB; queryability would be the deciding constraint if it pushes a migration. The deferral is real, not aspirational: both `trajectory_id` and `observation_id` hash semantics are parent-independent, so B1→B2→B3 is a purely additive schema change (new linkage column or table; read-side prefix stitch in `read_trajectory`; eventual drop of redundant prefix rows) with no rehashing of existing IDs.
+
+**Candidate selection.** Branch positions are drawn from the substrate's own shape signals via the C2 catalog. Two axes:
+
+- **Principled** — lowest `gap_over_H` (the catalog's "commitment ratio at the floor"). High entropy with a small rank-1/rank-2 gap is where the model holds the trajectory open; perturbation tests whether the openness is real leverage or local indecision the model recovers from.
+- **Baseline** — highest deep-window entropy. Complement to the principled axis; checks whether H alone (without the gap normalisation) picks different positions and whether those behave differently under perturbation.
+
+Per-tag controls fall out of the selection rule:
+
+- **SLOTTED** — class-slot phase positions are the natural leverage candidates.
+- **SCAFFOLD** — pinned phase positions; no-leverage-by-construction baseline.
+- **NOPERIOD Cluster A** — monotonic acf decay; memoryless baseline.
+- **NOPERIOD Cluster B** — bimodal H with rare spikes; spike positions are leverage candidates outside the periodic regime.
+
+**Alt-token selection.** First batch uses **argmax-of-non-chosen** — one alt per candidate position, deterministic, the simplest perturbation that is still off the trajectory's own argmax path. Second batch extends to **Gumbel-Top-k sampling-without-replacement** (Kool 2019; per the `lit-review.md` addendum) for K plausible alts at each position proportional to the model's full distribution. Gumbel-Top-k is held until first-batch results inform what K and what positions warrant the broader fan-out.
+
+**Extension and termination.** Branch trajectories extend under hard-cap T=0 to `L_arch=2047`. Predicates are the substrate-aligned `[eos, window_cap]`. Re-absorption-at-period and similar shape-aware terminators are descriptive readouts post-hoc, not predicates — observing whether a branch re-absorbs is the empirical question; terminating on it would prejudice the read.
+
+**First-batch shape.** Roughly ten branches across the candidate axes and regime tags: a mix of SLOTTED class-slot leverage candidates, SCAFFOLD no-leverage controls, NOPERIOD Cluster A memoryless baselines, and NOPERIOD Cluster B spike candidates. Sized to validate the branching mechanics and produce first signals before scaling.
+
+**Empirical questions.** Two:
+
+- **Transient leverage.** Does perturbation in the early transient redirect the eventual collapse? Same-attractor convergence under transient perturbation would say the attractor is robustly reachable; basin-switch would say transient state carries the redirection.
+- **Cyclic leverage.** Does perturbation at a per-cycle bifurcation position break, transition to a different cycle, or re-absorb to the parent's cycle? Re-absorption at the perturbation period is the strongest signature of a stable structured attractor.
+
+**Branch comparison renderer.** A read-side renderer that puts parent and branch on common axes — token-level divergence, H-trace divergence, position-resolved `logit_gap` and `gap_over_H` — is the natural descriptive companion to first-batch results. Named here; design deferred until first batch lands and the relevant comparisons are concrete.
+
 ## Cycle-to-cycle inheritance
 
 In-cycle catalogs are designed to outlast the cycle. The expectation is that Cycle 3's substrate is C2's catalog of record — the consolidated descriptive readout under v0.2 vocabulary — the way C2's substrate is C1's trajectories. Build accordingly. Catalogs are constructed over substrate primitives that are foundation-stable (per-step records, shape metrics computed over them, empirical distributions at structural positions), not over the current cycle's regime taxonomy or working-vocabulary classifications. A catalog should remain legible after a re-founding that retires the vocabulary it was first read in; if a catalog requires the cycle's regime names to interpret its rows, that's a signal it's classifying rather than describing, and the failure mode the discipline guards against.

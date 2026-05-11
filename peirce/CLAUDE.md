@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 2026-05-09 — cycle-2 cleanup pass; basins.py retired)*
+@README.md *(updated 2026-05-11 — C2 branching protocol aspirational surface)*
 
 ## Standards within this path
 

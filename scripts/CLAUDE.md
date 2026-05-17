@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 2026-05-11 — branch_compare lands; branching surface concrete end-to-end)*
+@README.md *(updated 2026-05-17 — plot_branches lands; regime-tag consolidation is next, planning in `notes/regime-tag-consolidation.md`)*
 
 ## Standards within this path
 

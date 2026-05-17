@@ -101,6 +101,35 @@ Minimal pytest suite for `peirce/regime.py`. For each of the seven tags, at leas
 
 Tests double as definition-by-example for the tags. If a future re-audit forces a definition change, the tests are where the change is registered.
 
+## Audit findings (2026-05-17, `scripts/regime_tag_audit.py` first run)
+
+The audit ran over 125 trajectories (100 substrate + 25 first-batch branches; branches meet the depth threshold and are taxonomically classifiable, so kept in). Three findings drive the resolver design.
+
+**1. HARMONIC is orthogonal to slot/scaffold.** The strict harmonic-ladder predicate (`len(peaks) >= 3`, peaks[1..2] at integer multiples of peaks[0] within ±1) fires across 77 of 125 trajectories: 51 SCAFFOLD, 18 SLOTTED-CLASS, 5 SLOTTED-COUNTER-INT, 2 SLOTTED-MIXED, 1 SLOTTED-COUNTER-LETTER. The "SLOTTED-HARMONIC" name in `first_batch_branches.BATCH` was misleading — HARMONIC is a peak-structure axis, not a slot-content axis. Decision: structured `RegimeTag` over flat string. The umbrella / slot_character / peak_structure axes are real and orthogonal at substrate scale.
+
+**2. HARMONIC predicate tightness vs N1 annotator.** 5 of 7 manifest=SLOTTED-HARMONIC specimens have <3 acf peaks (some only one peak at deep lag):
+
+```
+0a52701d  peaks=[(5, 0.40), (9, 0.35)]                          — 2 peaks, 9 not a multiple of 5
+5f3c1e41  peaks=[(96, 0.62)]                                    — 1 peak at deep lag
+9bde3a7a  peaks=[(77, 0.31)]                                    — 1 peak at deep lag
+a36f4b57  peaks=[(3, 0.31), (65, 0.35)]                         — 2 peaks, 65 not a multiple of 3
+fffba0e8  peaks=[(24, 0.34), (121, 0.31)]                       — 2 peaks, 121 ≈ 5×24 but only 2 peaks
+```
+
+The N1 annotator's HARMONIC was effectively "any periodic structure with a deep-lag peak" — looser than a strict-ladder predicate. Decision point for the resolver: keep the strict definition (predictive but rejects 5 of the 7 N1-tagged specimens) or loosen to match annotator intent (more inclusive but vaguer). Recommend keeping strict — the strict predicate carves a cleaner empirical class, and the 5 loose specimens are better described as "PERIODIC with single-peak structure" or "PERIODIC with non-laddered peaks" — distinct peak structures worth their own labels rather than being collapsed under HARMONIC. The strict-HARMONIC bucket then represents the clean integer-multiple-ladder population specifically.
+
+**3. NOPERIOD-A/B holds without the bimodal-H half.** Over the 8 NOPERIOD-tagged BATCH entries: 5/5 NOPERIOD-A and 3/3 NOPERIOD-B agree with the predicate (relaxed-PEAK_MIN=0.10 presence/absence). The bimodal-H half of the B definition can stay deferred — the relaxed-peak axis alone is doing the work at this n. Over the full substrate: 9 A / 6 B? (the `?` carries over until the H-mode check is operationalised, but the audit table's H_IQR column is already shown to confirm bimodal-H qualitatively).
+
+**4. One real catalog disagreement.** `fa70f050` manifest=SCAFFOLD, catalog=SLOTTED-CLASS+H with period=2. The catalog detects non-trivial chosen content at some phase; the manifest annotation missed it. Worth eyeballing post-resolver-landing — either a borderline slot the catalog over-eagerly flags or a real slot the hand annotation missed.
+
+**Implications for steps 2-5.**
+
+- Step 2 (resolver module): proceed directly to structured `RegimeTag` (the `@dataclass` variant in the sketch above). Flat-string was the conservative default; the audit settled it.
+- Step 3 (operationalise definitions): SLOTTED-HARMONIC stays strict per (2) above. NOPERIOD-A/B operational (B-half deferred per (3)). SLOTTED-MIXED precedence remains: any mix of CLASS + COUNTER slot tags at substrate-scale → MIXED.
+- Step 4 (refactor consumers): the manifest column in `BATCH` becomes audit ground-truth for the resolver tests, with the 5 N1-HARMONIC-loose specimens flagged as known mismatches in the docstring (the looseness is the discovery, not an error).
+- Step 5 (tests): `fa70f050` becomes the SCAFFOLD/SLOTTED borderline test specimen.
+
 ## Open questions / parked
 
 - **Single-tag vs structured tag.** Audit pass decides. If specimens cleanly inhabit one regime per axis, flat-string is enough; if axes are genuinely orthogonal at substrate scale, structured.
@@ -120,4 +149,4 @@ This work belongs in the forward sequence as a new substrate-consolidation move,
 
 Both move 6 (transient window) and move 7 (burn-in revision) benefit directly from the canonical regime-tag surface this consolidation lands; move 5 (completion-space) benefits because "what regimes are reachable from this position at temperature T" becomes a clean readout once tag-derivation is automatic.
 
-CLAUDE.md revision lands as the first move of the next code pass, alongside the audit script.
+CLAUDE.md revision + audit script landed together (commit follows this update). Next: resolver module per step 2 with structured tag per audit finding (1) above.

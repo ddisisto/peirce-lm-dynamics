@@ -2,7 +2,7 @@
 
 *Additive on top of the top-level `CLAUDE.md`.*
 
-@README.md *(updated 2026-05-17 — plot_branches lands; regime-tag consolidation is next, planning in `notes/regime-tag-consolidation.md`)*
+@README.md *(updated 2026-05-17 — regime-tag audit landed; resolver module is next, planning + findings in `notes/regime-tag-consolidation.md`)*
 
 ## Standards within this path
 
